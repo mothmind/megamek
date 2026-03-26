@@ -511,6 +511,14 @@ class GeneralEntityReadout implements EntityReadout {
               .map(section -> formatSection(section, formatting))
               .collect(Collectors.joining());
 
+        int discordLimit = 2000 - docStart.length() - docEnd.length();
+        if (formatting == ViewFormatting.DISCORD && formattedSections.length() > discordLimit) {
+            int safeLimit = discordLimit - docStart.length() - docEnd.length() - 3;
+            int lastSpace = formattedSections.lastIndexOf(" ", safeLimit);
+            int cutIndex = (lastSpace > 0) ? lastSpace : safeLimit;
+            formattedSections = formattedSections.substring(0, cutIndex) + "...";
+        }
+
         return docStart + formattedSections + docEnd;
     }
 

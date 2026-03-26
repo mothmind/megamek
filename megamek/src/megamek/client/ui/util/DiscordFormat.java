@@ -32,8 +32,6 @@
  */
 package megamek.client.ui.util;
 
-import java.util.regex.Pattern;
-
 public enum DiscordFormat {
     // Text colors
     GRAY(30),
@@ -77,9 +75,8 @@ public enum DiscordFormat {
 
     public static final DiscordFormat NUMBER_COLOR = YELLOW;
     public static final DiscordFormat ROW_SHADING = BG_BLUEISH_BLACK;
-    private static final Pattern numberPattern = Pattern.compile("\\b\\d+\\b");
 
     public static String highlightNumbersForDiscord(String original) {
-        return numberPattern.matcher(original).replaceAll(DiscordFormat.NUMBER_COLOR + "$0" + DiscordFormat.WHITE);
+        return original;
     }
 }
