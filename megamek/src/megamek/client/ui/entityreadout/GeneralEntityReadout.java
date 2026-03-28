@@ -50,6 +50,7 @@ import java.util.stream.Collectors;
 
 import megamek.MMConstants;
 import megamek.client.ui.Messages;
+import megamek.client.ui.clientGUI.GUIPreferences;
 import megamek.client.ui.util.ViewFormatting;
 import megamek.common.SourceBooks;
 import megamek.common.annotations.Nullable;
@@ -503,6 +504,8 @@ class GeneralEntityReadout implements EntityReadout {
         } else if (formatting == ViewFormatting.DISCORD) {
             docStart = "```ansi\n";
             docEnd = "```";
+
+            sectionsToShow = filterDiscordSections(sectionsToShow);
         }
 
         String formattedSections = Arrays.stream(ReadoutSections.values())
@@ -511,15 +514,34 @@ class GeneralEntityReadout implements EntityReadout {
               .map(section -> formatSection(section, formatting))
               .collect(Collectors.joining());
 
-        int discordLimit = 2000 - docStart.length() - docEnd.length();
+        int discordLimit = getDiscordCharacterLimit() - docStart.length() - docEnd.length();
         if (formatting == ViewFormatting.DISCORD && formattedSections.length() > discordLimit) {
-            int safeLimit = discordLimit - docStart.length() - docEnd.length() - 3;
+            int safeLimit = Math.max(0, discordLimit - 3);
             int lastSpace = formattedSections.lastIndexOf(" ", safeLimit);
             int cutIndex = (lastSpace > 0) ? lastSpace : safeLimit;
             formattedSections = formattedSections.substring(0, cutIndex) + "...";
         }
 
         return docStart + formattedSections + docEnd;
+    }
+
+    private Collection<ReadoutSections> filterDiscordSections(Collection<ReadoutSections> sectionsToShow) {
+        GUIPreferences preferences = GUIPreferences.getInstance();
+
+        return sectionsToShow.stream()
+              .filter(section -> switch (section) {
+                  case TECH_LEVEL -> preferences.getBoolean(GUIPreferences.ADVANCED_DISCORD_EXPORT_TECH_LEVEL);
+                  case AVAILABILITY -> preferences.getBoolean(GUIPreferences.ADVANCED_DISCORD_EXPORT_AVAILABILITY);
+                  case FLUFF -> preferences.getBoolean(GUIPreferences.ADVANCED_DISCORD_EXPORT_FLUFF);
+                  default -> true;
+              })
+              .collect(Collectors.toSet());
+    }
+
+    private int getDiscordCharacterLimit() {
+        return GUIPreferences.getInstance().getBoolean(GUIPreferences.ADVANCED_DISCORD_EXPORT_NITRO_LIMIT)
+              ? 4000
+              : 2000;
     }
 
     public String getReadout(String fontName, ViewFormatting formatting, ReadoutSections... sectionsToShow) {

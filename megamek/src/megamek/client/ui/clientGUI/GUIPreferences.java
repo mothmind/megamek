@@ -83,6 +83,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String ADVANCED_SHOW_FPS = "AdvancedShowFPS";
     public static final String ADVANCED_NO_SAVE_NAG = "AdvancedNoSaveNag";
     public static final String ADVANCED_SAVE_LOBBY_ON_START = "AdvancedSaveLobbyOnStart";
+    public static final String ADVANCED_DISCORD_EXPORT_TECH_LEVEL = "AdvancedDiscordExportTechLevel";
+    public static final String ADVANCED_DISCORD_EXPORT_AVAILABILITY = "AdvancedDiscordExportAvailability";
+    public static final String ADVANCED_DISCORD_EXPORT_FLUFF = "AdvancedDiscordExportFluff";
+    public static final String ADVANCED_DISCORD_EXPORT_NITRO_LIMIT = "AdvancedDiscordExportNitroLimit";
 
     /* --End advanced settings-- */
     public static final String BOARD_MOVE_DEFAULT_CLIMB_MODE = "BoardMoveDefaultClimbMode";
@@ -909,6 +913,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
         setDefault(SBF_SHEET_HEADER_FONT, "");
         setDefault(SBF_SHEET_VALUE_FONT, "");
         setDefault(SUMMARY_FONT, "");
+        setDefault(ADVANCED_DISCORD_EXPORT_TECH_LEVEL, false);
+        setDefault(ADVANCED_DISCORD_EXPORT_AVAILABILITY, false);
+        setDefault(ADVANCED_DISCORD_EXPORT_FLUFF, false);
+        setDefault(ADVANCED_DISCORD_EXPORT_NITRO_LIMIT, false);
     }
 
     public void setDefault(String name, Color color) {
