@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -708,7 +708,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
     }
 
     public boolean shouldDeployForRound(int round) {
-        return deploymentTable.containsKey(round);
+        return !deploymentTable.isEmpty() && Collections.min(deploymentTable.keySet()) <= round;
     }
 
     /**
@@ -750,18 +750,22 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
         this.turnIndex = turnIndex;
     }
 
+    @Override
     public boolean hasBoardLocation(@Nullable BoardLocation boardLocation) {
         return hasBoardLocation(boardLocation.coords(), boardLocation.boardId());
     }
 
+    @Override
     public boolean hasBoardLocation(Coords coords, int boardId) {
         return hasBoard(boardId) && coords.getX() < board.size();
     }
 
+    @Override
     public boolean hasBoard(@Nullable BoardLocation boardLocation) {
         return (boardLocation != null) && hasBoard(boardLocation.boardId());
     }
 
+    @Override
     @SuppressWarnings("unused")
     public boolean hasBoard(int boardId) {
         return true;

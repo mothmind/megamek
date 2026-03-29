@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2002-2003 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2002-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2002-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -564,6 +564,29 @@ public class LosEffects {
           final @Nullable Coords targetPosition,
           int boardId,
           final boolean spotting) {
+        // Use attacker's height if not explicitly specified
+        int attackHeight = (attacker != null) ? attacker.getHeight() : 0;
+        return calculateLOS(game, attacker, target, attackerPosition, targetPosition, attackHeight, boardId, spotting);
+    }
+
+    /**
+     * This calculates LOS effects with an explicit attack height, allowing for weapons firing from specific levels of
+     * multi-level entities like buildings.
+     *
+     * @param attackerPosition The nominal position of the attacker on the board with the given board ID
+     * @param targetPosition   The nominal position of the target on the board with the given board ID
+     * @param attackHeight     The height from which the attack is being made
+     * @param boardId          The board on which the nominal positions are
+     *
+     * @return LOS effects between the given positions
+     */
+    public static LosEffects calculateLOS(final Game game, final @Nullable Entity attacker,
+          final @Nullable Targetable target,
+          final @Nullable Coords attackerPosition,
+          final @Nullable Coords targetPosition,
+          int attackHeight,
+          int boardId,
+          final boolean spotting) {
 
         // LOS fails if one of the entities is not deployed.
         if ((attacker == null) || (target == null) || (attackerPosition == null)
@@ -616,12 +639,13 @@ public class LosEffects {
         }
 
         ai.targetInfantry = target instanceof Infantry;
-        ai.attackHeight = (ai.attLowAlt) ? attacker.getAltitude() : attacker.getHeight();
+        ai.attackHeight = (ai.attLowAlt) ? attacker.getAltitude() : attackHeight;
         ai.targetHeight = (ai.targetLowAlt) ? target.getAltitude() : target.getHeight() + targetHeightAdjustment;
 
-        int attackerElevation = (ai.attLowAlt) ? attacker.getAltitude() : attacker.relHeight() + attackerHex.getLevel();
+        int attackerElevation = (ai.attLowAlt) ? attacker.getAltitude() :
+              attackHeight + attacker.getElevation() + attackerHex.getLevel();
         // for spotting, a mast mount raises our elevation by 1
-        if (spotting && attacker.hasWorkingMisc(MiscType.F_MAST_MOUNT, -1)) {
+        if (spotting && attacker.hasWorkingMisc(MiscType.F_MAST_MOUNT)) {
             attackerElevation += (ai.attLowAlt) ? 0 : 1;
         }
         final int targetElevation = (ai.targetLowAlt) ?
@@ -839,6 +863,7 @@ public class LosEffects {
             return new ToHitData(TargetRoll.IMPOSSIBLE, "LOS blocked by building hexes or levels.");
         }
 
+        // LOS blocking is not affected by EI - EI only reduces to-hit modifiers (IO p.69)
         if ((ultraWoods >= 1) || (lightWoods + (heavyWoods * 2) > 2)) {
             return new ToHitData(TargetRoll.IMPOSSIBLE, "LOS blocked by woods.");
         }
@@ -859,10 +884,6 @@ public class LosEffects {
             return new ToHitData(TargetRoll.IMPOSSIBLE, "LOS blocked by screen.");
         }
 
-        if (!underwaterWeapon && (lightSmoke + (heavySmoke * 2) + lightWoods + (heavyWoods * 2) > 2)) {
-            return new ToHitData(TargetRoll.IMPOSSIBLE, "LOS blocked by smoke and woods.");
-        }
-
         if (plantedFields > 0) {
             modifiers.addModifier((int) Math.floor(plantedFields / 2.0), plantedFields + " intervening planted fields");
         }
@@ -872,43 +893,40 @@ public class LosEffects {
         }
 
         if (lightWoods > 0) {
-            if (eiStatus > 0) {
-                modifiers.addModifier(1, "firing through light woods with EI system");
-            } else {
-                modifiers.addModifier(lightWoods, lightWoods + " intervening light woods");
-            }
+            // EI reduces woods modifier by 1 per hex, minimum +1 per hex (IO p.69)
+            // Light woods is already +1, so EI provides no benefit
+            modifiers.addModifier(lightWoods, lightWoods + " intervening light woods");
         }
 
+        // EI does not affect building modifiers - IO p.69 only mentions woods, jungle, smoke
         if (buildingLevelsOrHexes > 0) {
-            if (eiStatus > 0) {
-                modifiers.addModifier(1, "firing through building hex/level with EI system");
-            } else {
-                modifiers.addModifier(buildingLevelsOrHexes,
-                      buildingLevelsOrHexes + " intervening building levels or hexes");
-            }
+            modifiers.addModifier(buildingLevelsOrHexes,
+                  buildingLevelsOrHexes + " intervening building levels or hexes");
         }
 
         if (heavyWoods > 0) {
+            // Always add full heavy woods modifier (+2 per hex)
+            modifiers.addModifier(heavyWoods * 2, heavyWoods + " intervening heavy woods");
             if (eiStatus > 0) {
-                modifiers.addModifier(heavyWoods, heavyWoods + " intervening heavy woods");
-            } else {
-                modifiers.addModifier(heavyWoods * 2, heavyWoods + " intervening heavy woods");
+                // EI reduces woods modifier by 1 per hex, minimum +1 per hex (IO p.69)
+                // Track in ToHitData for combined EI modifier at the end
+                modifiers.addEiReduction(heavyWoods);
             }
         }
 
         if (lightSmoke > 0 && !underwaterWeapon) {
+            // EI reduces smoke modifier by 1 per hex, minimum +1 per hex (IO p.69)
+            // Light smoke is already +1, so EI provides no benefit
             modifiers.addModifier(lightSmoke, lightSmoke + " intervening light smoke");
         }
 
         if (heavySmoke > 0 && !underwaterWeapon) {
-            StringBuilder text = new StringBuilder(heavySmoke);
-            text.append(" intervening");
-            text.append(" heavy");
-            text.append(" smoke");
+            // Always add full heavy smoke modifier (+2 per hex)
+            modifiers.addModifier(heavySmoke * 2, heavySmoke + " intervening heavy smoke");
             if (eiStatus > 0) {
-                modifiers.addModifier(heavySmoke, text.toString());
-            } else {
-                modifiers.addModifier(heavySmoke * 2, text.toString());
+                // EI reduces heavy smoke modifier by 1 per hex (IO p.69)
+                // Track in ToHitData for combined EI modifier at the end
+                modifiers.addEiReduction(heavySmoke);
             }
         }
 
@@ -1371,11 +1389,16 @@ public class LosEffects {
             }
             // planted fields only rise one level above the terrain
             if (hex.containsTerrain(Terrains.FIELDS)) {
-                if (((hexEl + 1 > ai.attackAbsHeight) && (hexEl + 2 > ai.targetAbsHeight)) ||
-                      ((hexEl + 1 > ai.attackAbsHeight) && attackerAdjacent) ||
-                      ((hexEl + 1 > ai.targetAbsHeight) && targetAdjacent)) {
+                int terrainEl = hexEl + 1;
+                if (diagramLoS) {
+                    affectsLos = terrainEl >= losElevation;
+                } else {
+                    affectsLos = (terrainEl > maxUnitHeight) ||
+                          ((terrainEl > ai.attackAbsHeight) && attackerAdjacent) ||
+                          ((terrainEl > ai.targetAbsHeight) && targetAdjacent);
+                }
+                if (affectsLos) {
                     los.plantedFields++;
-
                 }
             }
 

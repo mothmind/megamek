@@ -71,6 +71,7 @@ import megamek.common.compute.Compute;
 import megamek.common.enums.VariableRangeTargetingMode;
 import megamek.common.equipment.*;
 import megamek.common.equipment.enums.BombType.BombTypeEnum;
+import megamek.common.equipment.enums.MiscTypeFlag;
 import megamek.common.game.Game;
 import megamek.common.game.InGameObject;
 import megamek.common.loaders.MapSettings;
@@ -1171,7 +1172,11 @@ public final class UnitToolTip {
                             }
                         }
 
-                        wpInfos.put(curWp.getName() + msg_ammo, currAmmo);
+                        // Only add ammo entry if there's ammunition to display
+                        // Avoids "NULL Weapon Name!" for Static Ammo Feed weapons with incompatible ammo types
+                        if (!currAmmo.ammunition.isEmpty()) {
+                            wpInfos.put(curWp.getName() + msg_ammo, currAmmo);
+                        }
                     }
                 }
             }
@@ -1519,7 +1524,7 @@ public final class UnitToolTip {
 
     public static String getOneLineSummary(Entity entity) {
         String result = "";
-        boolean isGunEmplacement = entity instanceof GunEmplacement;
+        boolean isGunEmplacement = entity.isBuildingEntityOrGunEmplacement();
         String armorStr = entity.getTotalArmor() + " / " + entity.getTotalOArmor();
         String internalStr = entity.getTotalInternal() + " / " + entity.getTotalOInternal();
         result += Messages.getString("BoardView1.Tooltip.ArmorInternals", armorStr, internalStr);
@@ -1774,9 +1779,8 @@ public final class UnitToolTip {
         String result = "";
 
         // Gun Emplacement Status
-        if (isGunEmplacement) {
-            GunEmplacement emp = (GunEmplacement) entity;
-            if (emp.isTurret() && emp.isTurretLocked(emp.getLocTurret())) {
+        if (entity instanceof GunEmplacement gunEmplacement) {
+            if (gunEmplacement.isTurret() && gunEmplacement.isTurretLocked(gunEmplacement.getLocTurret())) {
                 String sTurretLocked = addToTT("TurretLocked", NOBR) + " ";
                 attr = String.format("FACE=Dialog COLOR=%s", UIUtil.toColorHexString((GUIP.getWarningColor())));
                 sTurretLocked = UIUtil.tag("FONT", attr, sTurretLocked);
@@ -1955,7 +1959,7 @@ public final class UnitToolTip {
         Game game = entity.getGame();
         GameOptions gameOptions = game.getOptions();
         PlanetaryConditions conditions = game.getPlanetaryConditions();
-        boolean isGunEmplacement = entity instanceof GunEmplacement;
+        boolean isGunEmplacement = entity.isBuildingEntityOrGunEmplacement();
         String fontSizeAttr = String.format("class=%s", GUIP.getUnitToolTipFontSizeMod());
 
         if (!inGameValue) {
@@ -2072,7 +2076,7 @@ public final class UnitToolTip {
      * Returns unit values that are relevant in-game and in the lobby such as movement ability.
      */
     private static StringBuilder getMovement(Entity entity) {
-        boolean isGunEmplacement = entity instanceof GunEmplacement;
+        boolean isGunEmplacement = entity.isBuildingEntityOrGunEmplacement();
         String fontSizeAttr = String.format("class=%s", GUIP.getUnitToolTipFontSizeMod());
         String result;
         String col;
@@ -2256,8 +2260,8 @@ public final class UnitToolTip {
             if ((entity instanceof BipedMek) || (entity instanceof TripodMek)) {
                 int shieldMod = 0;
                 if (entity.hasShield()) {
-                    shieldMod -= entity.getNumberOfShields(MiscType.S_SHIELD_LARGE);
-                    shieldMod -= entity.getNumberOfShields(MiscType.S_SHIELD_MEDIUM);
+                    shieldMod -= entity.getNumberOfShields(MiscTypeFlag.S_SHIELD_LARGE);
+                    shieldMod -= entity.getNumberOfShields(MiscTypeFlag.S_SHIELD_MEDIUM);
                 }
 
                 if (shieldMod != 0) {
@@ -2334,7 +2338,7 @@ public final class UnitToolTip {
     }
 
     private static StringBuilder getArmor(Entity entity) {
-        boolean isGunEmplacement = entity instanceof GunEmplacement;
+        boolean isGunEmplacement = entity.isBuildingEntityOrGunEmplacement();
         String result;
         String col;
         String row;

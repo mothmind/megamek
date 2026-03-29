@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Vector;
 
 import megamek.common.TechConstants;
@@ -794,6 +795,11 @@ public class TestBattleArmor extends TestEntity {
                 }
             }
 
+            if (m.isDWPMounted() && (m.getLinkedBy() == null || !m.getLinkedBy().is(EquipmentTypeLookup.BA_DWP))) {
+                buff.append("Missing or incorrect link to a DWP for %s!\n".formatted(m.getName()));
+                correct = false;
+            }
+
             // Ensure that jump boosters are mounted in the body
             if ((m instanceof MiscMounted) && m.getType().hasFlag(MiscType.F_JUMP_BOOSTER)
                   && (m.getBaMountLoc() != BattleArmor.MOUNT_LOC_BODY)) {
@@ -878,7 +884,7 @@ public class TestBattleArmor extends TestEntity {
         for (int t = 0; t <= ba.getTroopers(); t++) {
             for (int loc = 0; loc < BattleArmor.MOUNT_NUM_LOCS; loc++) {
                 if (critsUsed[t][loc] > ba.getNumCrits(loc)) {
-                    buff.append(BattleArmor.getBaMountLocAbbr(loc))
+                    buff.append(BattleArmor.getBaMountLocName(loc))
                           .append(" of ")
                           .append(ba.getLocationAbbr(t))
                           .append(" has ")
@@ -892,7 +898,7 @@ public class TestBattleArmor extends TestEntity {
                     continue;
                 }
                 if (numAMWeapons[t][loc] > ba.getNumAllowedAntiMekWeapons(loc)) {
-                    buff.append(BattleArmor.getBaMountLocAbbr(loc))
+                    buff.append(BattleArmor.getBaMountLocName(loc))
                           .append(" of ")
                           .append(ba.getLocationAbbr(t))
                           .append(" has ")
@@ -904,7 +910,7 @@ public class TestBattleArmor extends TestEntity {
                 }
                 if (numAPWeapons[t][loc] > ba
                       .getNumAllowedAntiPersonnelWeapons(loc, t)) {
-                    buff.append(BattleArmor.getBaMountLocAbbr(loc))
+                    buff.append(BattleArmor.getBaMountLocName(loc))
                           .append(" of ")
                           .append(ba.getLocationAbbr(t))
                           .append(" has ")
@@ -920,8 +926,7 @@ public class TestBattleArmor extends TestEntity {
         return correct;
     }
 
-    public void getUnallocatedEquipment(Entity entity,
-          Vector<Mounted<?>> unallocated) {
+    public void getUnallocatedEquipment(Entity entity, Vector<Mounted<?>> unallocated) {
         for (Mounted<?> m : entity.getEquipment()) {
             if (m.getBaMountLoc() == BattleArmor.MOUNT_LOC_NONE) {
                 // OS-launcher ammo doesn't take up a slot
@@ -1018,18 +1023,18 @@ public class TestBattleArmor extends TestEntity {
     }
 
     @Override
-    public boolean correctWeight(StringBuffer buff, boolean showO, boolean showU) {
+    public boolean correctWeight(StringBuffer buff, boolean ignoreOverweight, boolean ignoreUnderweight) {
         double weightSum = calculateWeight();
         double weight = getWeight();
         boolean correct = true;
         String baDesignation = ba.getLocationAbbr(BattleArmor.LOC_SQUAD);
-        if (showO && ((weight + getMaxOverweight()) < weightSum)) {
+        if (!ignoreOverweight && ((weight + getMaxOverweight()) < weightSum)) {
             buff.append(baDesignation).append("Weight: ").append(calculateWeight())
                   .append(" is greater than ").append(getWeight())
                   .append("\n");
             correct = false;
         }
-        if (showU && ((weight - getMinUnderweight()) > weightSum)) {
+        if (!ignoreUnderweight && ((weight - getMinUnderweight()) > weightSum)) {
             buff.append("Weight: ").append(calculateWeight())
                   .append(" is less than ").append(getWeight()).append("\n");
             correct = false;
@@ -1119,7 +1124,7 @@ public class TestBattleArmor extends TestEntity {
         buff.append("Intro year: ").append(ba.getYear()).append("\n");
         buff.append(printSource());
         buff.append(printShortMovement());
-        if (correctWeight(buff, true, true)) {
+        if (correctWeight(buff, false, false)) {
             buff.append("Weight: ").append(getWeight() * 1000).append(" kg (")
                   .append(calculateWeight() * 1000).append(" kg)\n");
         }
@@ -1301,7 +1306,7 @@ public class TestBattleArmor extends TestEntity {
     }
 
     @Override
-    public boolean hasIllegalEquipmentCombinations(StringBuffer buff) {
+    public boolean hasIllegalEquipmentCombinations(@Nullable StringBuffer errors) {
         BattleArmor battleArmor = (BattleArmor) getEntity();
         Map<String, Integer> equipmentCount = new HashMap<>();
         List<String> currentErrors = new ArrayList<>();
@@ -1338,17 +1343,36 @@ public class TestBattleArmor extends TestEntity {
                     }
                 }
 
-                if (misc.hasFlag(MiscType.F_PARTIAL_WING) && ba.hasWorkingMisc(MiscType.F_JUMP_BOOSTER)) {
+                if (misc.hasFlag(MiscType.F_PARTIAL_WING) && battleArmor.hasWorkingMisc(MiscType.F_JUMP_BOOSTER)) {
                     currentErrors.add("BattleArmor may not mount a jump booster and partial wings!");
                 }
 
-                if (misc.hasFlag(MiscType.F_MECHANICAL_JUMP_BOOSTER) && ba.hasMyomerBooster()) {
+                if (misc.hasFlag(MiscType.F_MECHANICAL_JUMP_BOOSTER) && battleArmor.hasMyomerBooster()) {
                     currentErrors.add("BattleArmor may not mount a mechanical jump booster and a myomer booster!");
                 }
 
                 if (misc.hasFlag(MiscType.F_MODULAR_WEAPON_MOUNT)
-                      && ba.getChassisType() == BattleArmor.CHASSIS_TYPE_QUAD) {
+                      && battleArmor.getChassisType() == BattleArmor.CHASSIS_TYPE_QUAD) {
                     currentErrors.add("Quad BattleArmor cannot use a Standard Modular Weapon Mount");
+                }
+
+                // IO p.110: Mek NIU can only be mounted in PA(L)-type battlesuit
+                if (misc.hasFlag(MiscType.F_BATTLEMEK_NIU)
+                      && battleArmor.getWeightClass() != EntityWeightClass.WEIGHT_ULTRA_LIGHT) {
+                    currentErrors.add("BattleMek Neural Interface Unit can only be mounted in PA(L) battlesuits");
+                }
+
+                if (mount.is(EquipmentTypeLookup.BA_DWP)) {
+                    if (mount.getLinked() == null) {
+                        currentErrors.add("Detachable Weapon Packs must mount a weapon!");
+                    } else if (!mount.getLinked().getType().canBeMountedOnBaDwp()) {
+                        currentErrors.add("Illegal equipment %s in Detachable Weapon Pack!"
+                              .formatted(mount.getLinked().getName()));
+                    }
+
+                    if (mount.getLinkedBy() != null) {
+                        currentErrors.add("Detachable Weapon Packs cannot be mounted on other equipment!");
+                    }
                 }
             }
         }
@@ -1362,9 +1386,6 @@ public class TestBattleArmor extends TestEntity {
         if (equipmentCount.getOrDefault(EquipmentTypeLookup.BA_PARAFOIL, 0) > 1) {
             currentErrors.add("Cannot mount multiple parafoils");
         }
-        if (equipmentCount.getOrDefault(EquipmentTypeLookup.BA_MISSION_EQUIPMENT, 0) > 1) {
-            currentErrors.add("Cannot mount multiple mission equipment items");
-        }
         if (equipmentCount.containsKey(EquipmentTypeLookup.BA_DWP)) {
             if ((battleArmor.getWeightClass() == EntityWeightClass.WEIGHT_LIGHT)
                   || (battleArmor.getWeightClass() == EntityWeightClass.WEIGHT_ULTRA_LIGHT)) {
@@ -1372,9 +1393,10 @@ public class TestBattleArmor extends TestEntity {
             }
         }
 
-        if (!currentErrors.isEmpty()) {
-            buff.append(String.join("\n", currentErrors)).append("\n");
+        if (!currentErrors.isEmpty() && (errors != null)) {
+            errors.append(String.join("\n", currentErrors)).append("\n");
         }
-        return (!currentErrors.isEmpty()) || super.hasIllegalEquipmentCombinations(buff);
+        return (!currentErrors.isEmpty())
+              || super.hasIllegalEquipmentCombinations(Objects.requireNonNullElse(errors, new StringBuffer()));
     }
 }

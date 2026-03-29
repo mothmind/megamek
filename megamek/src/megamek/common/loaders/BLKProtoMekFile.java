@@ -38,6 +38,7 @@ import megamek.common.TechConstants;
 import megamek.common.equipment.ArmorType;
 import megamek.common.equipment.Engine;
 import megamek.common.equipment.EquipmentType;
+import megamek.common.equipment.MiscType;
 import megamek.common.equipment.Mounted;
 import megamek.common.equipment.WeaponType;
 import megamek.common.exceptions.LocationFullException;
@@ -146,6 +147,15 @@ public class BLKProtoMekFile extends BLKFile implements IMekLoader {
         t.setArmorTonnage(t.getArmorWeight());
 
         loadQuirks(t);
+
+        // ProtoMeks cannot shut down EI per IO:AE p.69 -- set mode to "On" (index 1)
+        for (Mounted<?> m : t.getEquipment()) {
+            if ((m.getType() instanceof MiscType) && m.getType().hasFlag(MiscType.F_EI_INTERFACE)) {
+                m.setMode(1);
+                break;
+            }
+        }
+
         return t;
     }
 

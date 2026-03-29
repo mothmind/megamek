@@ -55,6 +55,7 @@ import megamek.common.equipment.Mounted;
 import megamek.common.equipment.Sensor;
 import megamek.common.equipment.WeaponMounted;
 import megamek.common.equipment.WeaponType;
+import megamek.common.equipment.enums.MiscTypeFlag;
 import megamek.common.exceptions.LocationFullException;
 import megamek.common.units.Aero;
 import megamek.common.units.Entity;
@@ -359,7 +360,7 @@ public class MekFileParser {
                 if (m.getLinked() == null) {
                     LOGGER.error("Unable to match {} to laser for {}", m.getName(), ent.getShortName());
                 }
-            } else if ((m.getType().hasFlag(MiscType.F_DETACHABLE_WEAPON_PACK))) {
+            } else if (m.is(EquipmentTypeLookup.BA_DWP)) {
                 for (Mounted<?> mWeapon : ent.getTotalWeaponList()) {
                     if (!mWeapon.isDWPMounted()) {
                         continue;
@@ -368,16 +369,12 @@ public class MekFileParser {
                     if (mWeapon.getLinkedBy() != null) {
                         continue;
                     }
-
-                    // check location
+                    // check squad/trooper location (arm/body is not stored in the BLK file)
                     if (mWeapon.getLocation() == m.getLocation()) {
                         m.setLinked(mWeapon);
                         break;
                     }
-                }
-                if (m.getLinked() == null) {
-                    // huh. this shouldn't happen
-                    throw new EntityLoadingException("Unable to match DWP to weapon for " + ent.getShortName());
+                    // A DWP without a weapon is invalid (they're not modular mounts, TO:AUE p.99), but they may load
                 }
             } else if ((m.getType().hasFlag(MiscType.F_AP_MOUNT))) {
                 for (Mounted<?> mWeapon : ent.getTotalWeaponList()) {
@@ -543,7 +540,7 @@ public class MekFileParser {
                 if (ent.hasTargComp() ||
                       ((Mek) ent).hasTSM(true) ||
                       (!ent.getMPBoosters().isNone() &&
-                            !ent.hasWorkingMisc(MiscType.F_MASC, MiscType.S_SUPERCHARGER))) {
+                            !ent.hasWorkingMisc(MiscType.F_MASC, MiscTypeFlag.S_SUPERCHARGER))) {
                     LOGGER.error("Loading AES with incompatible systems for {}", ent.getShortName());
                 }
 
@@ -575,7 +572,7 @@ public class MekFileParser {
                         throw new EntityLoadingException("Talons are only legal in the Legs for " + ent.getShortName());
                     }
                     for (int loc = 0; loc < ent.locations(); loc++) {
-                        if (ent.locationIsLeg(loc) && !ent.hasWorkingMisc(MiscType.F_TALON, -1, loc)) {
+                        if (ent.locationIsLeg(loc) && !ent.hasWorkingMisc(MiscType.F_TALON, null, loc)) {
                             throw new EntityLoadingException("Talons must be in all legs for " + ent.getShortName());
                         }
                     }

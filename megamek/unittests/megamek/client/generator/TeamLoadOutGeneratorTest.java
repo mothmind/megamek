@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2024-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -32,6 +32,7 @@
  */
 package megamek.client.generator;
 
+import static megamek.common.equipment.AmmoType.INCENDIARY_MOD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -44,6 +45,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -262,6 +264,41 @@ class TeamLoadOutGeneratorTest {
     }
 
     @Test
+    void testReconfigureEntityMekSemiGuidedIncendiaryAmmoType() throws LocationFullException {
+        TeamLoadOutGenerator tlg = new TeamLoadOutGenerator(game);
+
+        Mek mockMek = createMek("Catapult", "CPLT-C1", "J. Robert Hoppenheimer");
+        Mounted<?> bin1 = mockMek.addEquipment(mockLRM15AmmoType, Mek.LOC_LEFT_TORSO);
+        Mounted<?> bin2 = mockMek.addEquipment(mockLRM15AmmoType, Mek.LOC_RIGHT_TORSO);
+
+        MunitionWeightCollection mwc = new MunitionWeightCollection();
+        MunitionTree mt = new MunitionTree();
+        mt.insertImperative("Catapult", "CPLT-C1", "any", "LRM-15", "Semi-Guided " + INCENDIARY_MOD);
+
+        HashMap<String, Object> availMap = tlg.generateValidMunitionsForFactionAndEra("IS");
+        // We expect that all bins are set to the desired munition type as only one type
+        // is provided
+        tlg.reconfigureEntity(mockMek, mt, availMap);
+        assertFalse(((AmmoType) bin1.getType()).getMunitionType().contains(Munitions.M_STANDARD));
+        assertTrue(((AmmoType) bin1.getType()).getMunitionType().containsAll(EnumSet.of(Munitions.M_SEMIGUIDED,
+              Munitions.M_INCENDIARY_LRM)));
+        assertFalse(((AmmoType) bin2.getType()).getMunitionType().contains(Munitions.M_STANDARD));
+        assertTrue(((AmmoType) bin2.getType()).getMunitionType().containsAll(EnumSet.of(Munitions.M_SEMIGUIDED,
+              Munitions.M_INCENDIARY_LRM)));
+
+        // Now reset the ammo
+        mt.insertImperative("Catapult", "CPLT-C1", "any", "LRM-15", "Standard");
+        tlg.reconfigureEntity(mockMek, mt, availMap);
+        assertTrue(((AmmoType) bin1.getType()).getMunitionType().contains(Munitions.M_STANDARD));
+        assertFalse(((AmmoType) bin1.getType()).getMunitionType().containsAll(EnumSet.of(Munitions.M_SEMIGUIDED,
+              Munitions.M_INCENDIARY_LRM)));
+        assertTrue(((AmmoType) bin2.getType()).getMunitionType().contains(Munitions.M_STANDARD));
+        assertFalse(((AmmoType) bin2.getType()).getMunitionType().containsAll(EnumSet.of(Munitions.M_SEMIGUIDED,
+              Munitions.M_INCENDIARY_LRM)));
+
+    }
+
+    @Test
     void testReconfigureEntityMekThreeAmmoTypesFourBins() throws LocationFullException {
         TeamLoadOutGenerator tlg = new TeamLoadOutGenerator(game);
 
@@ -319,7 +356,7 @@ class TeamLoadOutGeneratorTest {
               "Dead-Fire",
               "Heat-Seeking",
               "Smoke");
-        mt.insertImperative("Catapult", "any", "any", "LRM", "Standard", "Swarm", "Semi-guided");
+        mt.insertImperative("Catapult", "any", "any", "LRM", "Standard", "Swarm", "Semi-Guided");
 
         HashMap<String, Object> availMap = tlg.generateValidMunitionsForFactionAndEra("IS");
         // J. Robert H. should get the first load out
@@ -517,8 +554,8 @@ class TeamLoadOutGeneratorTest {
         Assertions.assertFalse(tlg.checkLegality(mType, "CC", "IS", false));
         Assertions.assertFalse(tlg.checkLegality(mType, "FS", "IS", false));
         Assertions.assertFalse(tlg.checkLegality(mType, "IS", "IS", false));
-        Assertions.assertFalse(tlg.checkLegality(mType, "CLAN", "CL", false));
-        Assertions.assertFalse(tlg.checkLegality(mType, "CLAN", "CL", true));
+        Assertions.assertFalse(tlg.checkLegality(mType, "Clan", "CL", false));
+        Assertions.assertFalse(tlg.checkLegality(mType, "Clan", "CL", true));
 
         // Should be available to everyone
         when(mockGameOptions.stringOption(OptionsConstants.ALLOWED_TECH_LEVEL)).thenReturn("Advanced");
@@ -526,8 +563,8 @@ class TeamLoadOutGeneratorTest {
         Assertions.assertTrue(tlg.checkLegality(mType, "CC", "IS", false));
         Assertions.assertTrue(tlg.checkLegality(mType, "FS", "IS", false));
         Assertions.assertTrue(tlg.checkLegality(mType, "IS", "IS", false));
-        Assertions.assertTrue(tlg.checkLegality(mType, "CLAN", "CL", true));
-        Assertions.assertTrue(tlg.checkLegality(mType, "CLAN", "CL", true));
+        Assertions.assertTrue(tlg.checkLegality(mType, "Clan", "CL", true));
+        Assertions.assertTrue(tlg.checkLegality(mType, "Clan", "CL", true));
     }
 
     @Test
@@ -544,8 +581,8 @@ class TeamLoadOutGeneratorTest {
         Assertions.assertTrue(tlg.checkLegality(mType, "FS", "IS", false));
         Assertions.assertTrue(tlg.checkLegality(mType, "IS", "IS", false));
         // Check mixed-tech and regular Clan tech, which should match IS at this point
-        Assertions.assertTrue(tlg.checkLegality(mType, "CLAN", "CL", true));
-        Assertions.assertFalse(tlg.checkLegality(mType, "CLAN", "CL", false));
+        Assertions.assertTrue(tlg.checkLegality(mType, "Clan", "CL", true));
+        Assertions.assertFalse(tlg.checkLegality(mType, "Clan", "CL", false));
 
         // Set year back to 3025
         when(mockGameOptions.intOption(OptionsConstants.ALLOWED_YEAR)).thenReturn(3025);
@@ -553,29 +590,41 @@ class TeamLoadOutGeneratorTest {
         Assertions.assertFalse(tlg.checkLegality(mType, "CC", "IS", false));
         Assertions.assertFalse(tlg.checkLegality(mType, "FS", "IS", false));
         Assertions.assertFalse(tlg.checkLegality(mType, "IS", "IS", false));
-        Assertions.assertFalse(tlg.checkLegality(mType, "CLAN", "CL", true));
+        Assertions.assertFalse(tlg.checkLegality(mType, "Clan", "CL", true));
 
-        // Move up to 3070. Because of game settings and lack of "Common" year, ADA
-        // becomes available
-        // everywhere (at least in the IS) immediately after its inception.
+        // Move up to 3070. ADA has prototype factions CC, so only CC has access at
+        // the prototype date (3068). Other IS factions get access after the prototype
+        // offset (3068 + 8 = 3076), so they should NOT have access in 3070.
         when(mockGameOptions.intOption(OptionsConstants.ALLOWED_YEAR)).thenReturn(3070);
+        tlg.updateOptionValues();
+        Assertions.assertTrue(tlg.checkLegality(mType, "CC", "IS", false));
+        Assertions.assertFalse(tlg.checkLegality(mType, "FS", "IS", false));
+        Assertions.assertFalse(tlg.checkLegality(mType, "IS", "IS", false));
+        Assertions.assertFalse(tlg.checkLegality(mType, "Clan", "CL", true));
+
+        // Move up to 3076. Because of game settings and lack of "Common" year, ADA
+        // becomes available everywhere (at least in the IS) immediately after its inception.
+        when(mockGameOptions.intOption(OptionsConstants.ALLOWED_YEAR)).thenReturn(3076);
         tlg.updateOptionValues();
         Assertions.assertTrue(tlg.checkLegality(mType, "CC", "IS", false));
         Assertions.assertTrue(tlg.checkLegality(mType, "FS", "IS", false));
         Assertions.assertTrue(tlg.checkLegality(mType, "IS", "IS", false));
-        Assertions.assertTrue(tlg.checkLegality(mType, "CLAN", "CL", true));
+        Assertions.assertTrue(tlg.checkLegality(mType, "Clan", "CL", true));
     }
 
     @Test
     void testMunitionWeightCollectionTopN() {
         MunitionWeightCollection mwc = new MunitionWeightCollection();
         // Default weighting for all munition types.
-        // For missiles, "Dead-Fire" is first, followed by "Standard" by default.
+        // For missiles, "Dead-Fire" is first, followed by "Dead-Fire w/ Incendiary", then "Standard" by default.
+        // This is due to "Dead-Fire" having a 3.0 weight by default; DF + Incendiary then gets 2.4 by dint of 0.8x
+        // weight multiplier that reflects its lower damage output.
         // For other rounds, "Standard" should be first.
         HashMap<String, List<String>> topN = mwc.getTopN(3);
 
         assertTrue(topN.get("LRM").get(0).contains("Dead-Fire"));
-        assertTrue(topN.get("LRM").get(1).contains("Standard"));
+        assertTrue(topN.get("LRM").get(1).contains("Dead-Fire w/ Incendiary"));
+        assertTrue(topN.get("LRM").get(2).contains("Standard"));
         assertTrue(topN.get("SRM").get(0).contains("Dead-Fire"));
         assertTrue(topN.get("SRM").get(1).contains("Standard"));
 

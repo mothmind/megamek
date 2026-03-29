@@ -52,6 +52,7 @@ import megamek.common.Player;
 import megamek.common.Report;
 import megamek.common.TagInfo;
 import megamek.common.Team;
+import megamek.common.TemporaryECMField;
 import megamek.common.actions.ArtilleryAttackAction;
 import megamek.common.actions.AttackAction;
 import megamek.common.actions.EntityAction;
@@ -177,6 +178,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
 
     private final Hashtable<Coords, Vector<Minefield>> minefields = new Hashtable<>();
     private final Vector<Minefield> vibraBombs = new Vector<>();
+    private final Vector<Minefield> empMines = new Vector<>();
     private Vector<AttackHandler> attacks = new Vector<>();
     private Vector<ArtilleryAttackAction> offboardArtilleryAttacks = new Vector<>();
     private Vector<OrbitalBombardment> orbitalBombardmentAttacks = new Vector<>();
@@ -196,6 +198,9 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
 
     // smoke clouds
     private final List<SmokeCloud> smokeCloudList = new CopyOnWriteArrayList<>();
+
+    // temporary ECM fields (from EMP mines, etc.)
+    private final List<TemporaryECMField> temporaryECMFields = new CopyOnWriteArrayList<>();
 
     /**
      * Stores princess behaviors for game factions. It does not indicate that a faction is currently played by a bot,
@@ -340,6 +345,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     private void clearMinefieldsHelper() {
         minefields.clear();
         vibraBombs.removeAllElements();
+        empMines.removeAllElements();
         getPlayersList().forEach(Player::removeMinefields);
     }
 
@@ -364,6 +370,29 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
      */
     public boolean containsVibrabomb(Minefield mf) {
         return vibraBombs.contains(mf);
+    }
+
+    public Vector<Minefield> getEMPMines() {
+        return empMines;
+    }
+
+    public void addEMPMine(Minefield mf) {
+        empMines.addElement(mf);
+    }
+
+    public void removeEMPMine(Minefield mf) {
+        empMines.removeElement(mf);
+    }
+
+    /**
+     * Checks if the game contains the specified EMP mine
+     *
+     * @param mf the EMP mine to check
+     *
+     * @return true if the minefield contains an EMP mine.
+     */
+    public boolean containsEMPMine(Minefield mf) {
+        return empMines.contains(mf);
     }
 
     @Override
@@ -889,6 +918,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
         return lastPhase;
     }
 
+    @Override
     public void setLastPhase(GamePhase lastPhase) {
         this.lastPhase = lastPhase;
     }
@@ -1097,6 +1127,17 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
                 List<Entity> listForLocation = positionMap.computeIfAbsent(location, k -> new ArrayList<>());
                 listForLocation.add(entity);
             }
+
+            if (entity instanceof BuildingEntity buildingEntity) {
+                for (Coords coords : buildingEntity.getSecondaryPositions().values()) {
+                    final BoardLocation secondaryLocation = new BoardLocation(coords, entity.getBoardId(), false);
+                    if (hasBoardLocation(secondaryLocation)) {
+                        List<Entity> listForLocation = positionMap.computeIfAbsent(secondaryLocation,
+                              k -> new ArrayList<>());
+                        listForLocation.add(entity);
+                    }
+                }
+            }
         }
         return positionMap;
     }
@@ -1240,6 +1281,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     /**
      * looks for an entity by id number even if out of the game
      */
+    @Override
     public Entity getEntityFromAllSources(int id) {
         Entity en = getEntity(id);
         if (null == en) {
@@ -1431,6 +1473,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
         illuminatedPositions.clear();
         clearAllReports();
         smokeCloudList.clear();
+        temporaryECMFields.clear();
 
         forceVictory = false;
         victoryPlayerId = Player.PLAYER_NONE;
@@ -1621,7 +1664,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     }
 
     /**
-     * Return a Vector of gun emplacements at Coords <code>c</code>
+     * Return a Vector of gun emplacements at Coords <code>c</code>.
      *
      * @param c The coordinates to check
      *
@@ -1630,7 +1673,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     public List<GunEmplacement> getGunEmplacements(Coords c, int boardId) {
         List<GunEmplacement> result = new ArrayList<>();
 
-        // Only build the list if the coords are on the board.
+        // Only build the list if the coords are on the board. // TODO Ensure this works w/ BuildingEntity
         if (hasBoardLocation(c, boardId)) {
             for (Entity entity : getEntitiesVector(c, boardId, true)) {
                 if (entity instanceof GunEmplacement gunEmplacement) {
@@ -1650,7 +1693,7 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     public boolean hasRooftopGunEmplacement(Coords c, int boardId) {
         if (!hasBoardLocation(c, boardId)) {
             return false;
-        }
+        } // TODO Ensure this works with BuildingEntity
         Board board = getBoard(boardId);
         IBuilding building = board.getBuildingAt(c);
         if (building == null) {
@@ -2154,7 +2197,11 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
     }
 
     /**
-     * Removes the first turn found that the specified entity can move in. Used when a turn is played out of order
+     * Removes the first turn found that the specified entity can move in. Used when a turn is played out of order.
+     *
+     * @param entity the entity to remove a turn for
+     * @return the removed GameTurn, or null if not found
+     * @throws Exception if called during the movement phase
      */
     public @Nullable GameTurn removeFirstTurnFor(final Entity entity) throws Exception {
         if (getPhase().isMovement()) {
@@ -3435,6 +3482,44 @@ public final class Game extends AbstractGame implements Serializable, PlanetaryC
 
     public void removeCompletelyDissipatedSmokeClouds() {
         smokeCloudList.removeIf(SmokeCloud::isCompletelyDissipated);
+    }
+
+    /**
+     * Adds a temporary ECM field to the game (e.g., from EMP mine detonation).
+     *
+     * @param field The temporary ECM field to add
+     */
+    public void addTemporaryECMField(TemporaryECMField field) {
+        temporaryECMFields.add(field);
+    }
+
+    /**
+     * @return An unmodifiable view of all temporary ECM fields currently active
+     */
+    public List<TemporaryECMField> getTemporaryECMFields() {
+        return Collections.unmodifiableList(temporaryECMFields);
+    }
+
+    /**
+     * Replaces all temporary ECM fields with the provided list. Used for syncing client state with server.
+     *
+     * @param fields The new list of temporary ECM fields (may be null or empty)
+     */
+    public void setTemporaryECMFields(List<TemporaryECMField> fields) {
+        temporaryECMFields.clear();
+        if (fields != null) {
+            temporaryECMFields.addAll(fields);
+        }
+    }
+
+    /**
+     * Removes expired temporary ECM fields based on the current round and phase.
+     *
+     * @param currentRound The current game round
+     * @param currentPhase The current game phase
+     */
+    public void removeExpiredECMFields(int currentRound, GamePhase currentPhase) {
+        temporaryECMFields.removeIf(field -> field.isExpired(currentRound, currentPhase));
     }
 
     /**

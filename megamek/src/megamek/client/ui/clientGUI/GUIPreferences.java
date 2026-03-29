@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2005-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2005-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -291,6 +291,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String FOV_DARKEN_ALPHA = "FovDarkenAlpha";
     public static final String FOV_STRIPES = "FoVFogStripes";
     public static final String FOV_GRAYSCALE = "FoVFogGrayscale";
+    public static final String FOV_SPOTTING_MODE = "FovSpottingMode";
     public static final String GUI_SCALE = "GUIScale";
     public static final String LOBBY_MEK_TABLE_UNIT_WIDTH = "LobbyMekTableUnitWidth";
     public static final String LOBBY_MEK_TABLE_PILOT_WIDTH = "LobbyMekTablePilotWidth";
@@ -426,6 +427,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String BOARD_EDIT_LOAD_SIZE_HEIGHT = "BoardEditLoadSizeHeight";
     public static final String BOARD_EDIT_LOAD_SIZE_WIDTH = "BoardEditLoadSizeWidth";
     public static final String BOARD_EDIT_RANDOM_DIALOG_START = "BoardEditRandomDialogStart";
+    public static final String BOARD_SAVE_INCLUDE_LICENSE = "BoardSaveIncludeLicense";
     public static final String ALLY_UNIT_COLOR = "AllyUnitColor";
     public static final String MY_UNIT_COLOR = "MyUnitColor";
     public static final String ENEMY_UNIT_COLOR = "EnemyUnitColor";
@@ -433,6 +435,9 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String SHOW_PLANETARY_CONDITIONS_OVERLAY = "ShowPlanetaryConditionsOverlay";
     public static final String SHOW_TRACE_OVERLAY = "ShowTraceOverlay";
     public static final String UNIT_LABEL_STYLE = "UnitLabelStyle";
+    public static final String RULER_DIAGRAM_VISIBLE = "RulerDiagramVisible";
+    public static final String RULER_COMPARE_VISIBLE = "RulerCompareVisible";
+
     public static final String AS_CARD_FONT = "AsCardFont";
     public static final String AS_CARD_SIZE = "AsCardSize";
     public static final String SBF_SHEET_HEADER_FONT = "SBFSheetHeaderFont";
@@ -522,6 +527,8 @@ public class GUIPreferences extends PreferenceStoreProxy {
               .getPreferenceStore("GUIPreferences", getClass().getName(), "megamek.client.ui.swing.GUIPreferences");
 
         store.setDefault(BOARD_EDIT_RANDOM_DIALOG_START, false);
+        store.setDefault(BOARD_SAVE_INCLUDE_LICENSE, true);
+        store.setDefault(RULER_DIAGRAM_VISIBLE, true);
         setDefault(ADVANCED_NO_SAVE_NAG, false);
         store.setDefault(ADVANCED_SAVE_LOBBY_ON_START, false);
         store.setDefault(ADVANCED_MOVE_STEP_DELAY, 50);
@@ -641,6 +648,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
         store.setDefault(FOV_DARKEN_ALPHA, 100);
         store.setDefault(FOV_STRIPES, 35);
         store.setDefault(FOV_GRAYSCALE, false);
+        store.setDefault(FOV_SPOTTING_MODE, false);
 
         store.setDefault(HIGH_QUALITY_GRAPHICS, true);
         store.setDefault(AO_HEX_SHADOWS, false);
@@ -834,10 +842,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
 
         setDefault(RULER_COLOR_1, DEFAULT_CYAN);
         setDefault(RULER_COLOR_2, DEFAULT_MAGENTA);
-        store.setDefault(RULER_POS_X, 0);
-        store.setDefault(RULER_POS_Y, 0);
-        store.setDefault(RULER_SIZE_HEIGHT, 300);
-        store.setDefault(RULER_SIZE_WIDTH, 500);
+        store.setDefault(RULER_POS_X, -1);
+        store.setDefault(RULER_POS_Y, -1);
+        store.setDefault(RULER_SIZE_HEIGHT, 350);
+        store.setDefault(RULER_SIZE_WIDTH, 600);
 
         store.setDefault(SCROLL_SENSITIVITY, 3);
         store.setDefault(SHOW_FIELD_OF_FIRE, true);
@@ -1246,6 +1254,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
 
     public boolean getFovGrayscale() {
         return store.getBoolean(FOV_GRAYSCALE);
+    }
+
+    public boolean getFovSpottingMode() {
+        return store.getBoolean(FOV_SPOTTING_MODE);
     }
 
     public int getMapZoomIndex() {
@@ -1780,6 +1792,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
         return store.getBoolean(BOARD_EDIT_RANDOM_DIALOG_START);
     }
 
+    public boolean getBoardSaveIncludeLicense() {
+        return store.getBoolean(BOARD_SAVE_INCLUDE_LICENSE);
+    }
+
     public void setShadowMap(boolean state) {
         store.setValue(SHADOW_MAP, state);
     }
@@ -2126,6 +2142,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
 
     public void setFovGrayscale(boolean state) {
         store.setValue(FOV_GRAYSCALE, state);
+    }
+
+    public void setFovSpottingMode(boolean state) {
+        store.setValue(FOV_SPOTTING_MODE, state);
     }
 
     public void setMapZoomIndex(int zoomIndex) {
@@ -2622,92 +2642,16 @@ public class GUIPreferences extends PreferenceStoreProxy {
         return store.getInt(RAT_TECH_LEVEL);
     }
 
-    public void setRATTechLevel(int v) {
-        store.setValue(RAT_TECH_LEVEL, v);
-    }
-
-    public String getRATBVMin() {
-        return store.getString(RAT_BV_MIN);
-    }
-
-    public void setRATBVMin(String v) {
-        store.setValue(RAT_BV_MIN, v);
-    }
-
-    public String getRATBVMax() {
-        return store.getString(RAT_BV_MAX);
-    }
-
-    public void setRATBVMax(String v) {
-        store.setValue(RAT_BV_MAX, v);
-    }
-
-    public String getRATNumMeks() {
-        return store.getString(RAT_NUM_MEKS);
-    }
-
-    public void setRATNumMeks(String v) {
-        store.setValue(RAT_NUM_MEKS, v);
-    }
-
-    public String getRATNumVees() {
-        return store.getString(RAT_NUM_VEES);
-    }
-
-    public void setRATNumVees(String v) {
-        store.setValue(RAT_NUM_VEES, v);
-    }
-
-    public String getRATNumBA() {
-        return store.getString(RAT_NUM_BA);
-    }
-
-    public void setRATNumBA(String v) {
-        store.setValue(RAT_NUM_BA, v);
-    }
-
-    public String getRATNumInf() {
-        return store.getString(RAT_NUM_INF);
-    }
-
-    public void setRATNumInf(String v) {
-        store.setValue(RAT_NUM_INF, v);
-    }
-
-    public String getRATYearMin() {
-        return store.getString(RAT_YEAR_MIN);
-    }
-
-    public void setRATYearMin(String v) {
-        store.setValue(RAT_YEAR_MIN, v);
-    }
-
-    public String getRATYearMax() {
-        return store.getString(RAT_YEAR_MAX);
-    }
-
-    public void setRATYearMax(String v) {
-        store.setValue(RAT_YEAR_MAX, v);
-    }
-
-    public boolean getRATPadBV() {
-        return store.getBoolean(RAT_PAD_BV);
-    }
-
-    public void setRATPadBV(boolean v) {
-        store.setValue(RAT_PAD_BV, v);
-    }
-
     public String getRATSelectedRAT() {
         return store.getString(RAT_SELECTED_RAT);
     }
 
-    public void setRATSelectedRAT(String v) {
-        store.setValue(RAT_SELECTED_RAT, v);
-    }
-
     public void setBoardEdRndStart(boolean b) {
         store.setValue(BOARD_EDIT_RANDOM_DIALOG_START, b);
+    }
+
+    public void setBoardSaveIncludeLicense(boolean includeLicense) {
+        store.setValue(BOARD_SAVE_INCLUDE_LICENSE, includeLicense);
     }
 
     // region Colours
@@ -3813,4 +3757,22 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public void setForceDisplayBtnMisc(boolean value) {store.setValue(FORCE_DISPLAY_BTN_MISC, value);}
 
     public boolean getForceDisplayBtnMisc() {return getBoolean(FORCE_DISPLAY_BTN_MISC);}
+
+    // region Ruler Diagram
+    public boolean getRulerDiagramVisible() {
+        return store.getBoolean(RULER_DIAGRAM_VISIBLE);
+    }
+
+    public void setRulerDiagramVisible(boolean visible) {
+        store.setValue(RULER_DIAGRAM_VISIBLE, visible);
+    }
+
+    public boolean getRulerCompareVisible() {
+        return store.getBoolean(RULER_COMPARE_VISIBLE);
+    }
+
+    public void setRulerCompareVisible(boolean visible) {
+        store.setValue(RULER_COMPARE_VISIBLE, visible);
+    }
+    // endregion Ruler Diagram
 }

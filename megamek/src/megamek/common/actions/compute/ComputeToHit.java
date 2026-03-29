@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -46,7 +46,6 @@ import megamek.common.compute.ComputeSideTable;
 import megamek.common.enums.AimingMode;
 import megamek.common.equipment.AmmoMounted;
 import megamek.common.equipment.AmmoType;
-import megamek.common.equipment.GunEmplacement;
 import megamek.common.equipment.HandheldWeapon;
 import megamek.common.equipment.INarcPod;
 import megamek.common.equipment.MiscType;
@@ -243,9 +242,9 @@ public class ComputeToHit {
 
         // Break weapon type checks into logical groups
         boolean isLrmType = (ammoTypeEnum == AmmoType.AmmoTypeEnum.LRM) ||
-                (ammoTypeEnum == AmmoType.AmmoTypeEnum.LRM_IMP);
+              (ammoTypeEnum == AmmoType.AmmoTypeEnum.LRM_IMP);
         boolean isSrmType = (ammoTypeEnum == AmmoType.AmmoTypeEnum.SRM) ||
-                (ammoTypeEnum == AmmoType.AmmoTypeEnum.SRM_IMP);
+              (ammoTypeEnum == AmmoType.AmmoTypeEnum.SRM_IMP);
         boolean isMmlType = (ammoTypeEnum == AmmoType.AmmoTypeEnum.MML);
 
         // Combine into weapon compatibility check
@@ -354,7 +353,8 @@ public class ComputeToHit {
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.SRM) ||
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.SRM_IMP) ||
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.NLRM)) &&
-                  (munition.contains(AmmoType.Munitions.M_NARC_CAPABLE))) {
+                  (munition.contains(AmmoType.Munitions.M_NARC_CAPABLE) ||
+                        munition.contains(AmmoType.Munitions.M_ARAD))) {
                 isINarcGuided = true;
             }
         }
@@ -371,7 +371,8 @@ public class ComputeToHit {
                   (te != null) &&
                   (ammoType != null) &&
                   usesAmmo &&
-                  (munition.contains(AmmoType.Munitions.M_NARC_CAPABLE) &&
+                  ((munition.contains(AmmoType.Munitions.M_NARC_CAPABLE)
+                        || munition.contains(AmmoType.Munitions.M_ARAD)) &&
                         (te.isNarcedBy(ae.getOwner().getTeam()) || te.isINarcedBy(ae.getOwner().getTeam())))) {
                 spotter = te;
                 narcSpotter = true;
@@ -421,7 +422,16 @@ public class ComputeToHit {
             losMods = new ToHitData();
         } else if (!isIndirect || (spotter == null)) {
             if (!exchangeSwarmTarget) {
-                los = LosEffects.calculateLOS(game, game.getEntity(ae.getId()), target);
+                Coords firingPosition = weaponEntity.getWeaponFiringPosition(weapon);
+                int firingHeight = weaponEntity.getWeaponFiringHeight(weapon);
+                los = LosEffects.calculateLOS(game,
+                      game.getEntity(ae.getId()),
+                      target,
+                      firingPosition,
+                      target.getPosition(),
+                      firingHeight,
+                      ae.getBoardId(),
+                      false);
             } else {
                 // Swarm should draw LoS between targets, not attacker, since we don't want LoS to be blocked
                 if (oldTarget.getTargetType() == Targetable.TYPE_ENTITY) {
@@ -480,9 +490,9 @@ public class ComputeToHit {
         }
 
         // determine some more variables
-        int aElev = ae.getElevation();
+        int aElev = weaponEntity.getWeaponFiringHeight(weapon);
         int tElev = target.getElevation();
-        int distance = Compute.effectiveDistance(game, ae, target);
+        int distance = Compute.effectiveWeaponDistance(game, weaponEntity, weapon, target);
 
         // Set up our initial toHit data
         ToHitData toHit = new ToHitData();
@@ -792,6 +802,9 @@ public class ComputeToHit {
               isECMAffected,
               isINarcGuided);
 
+        // Add the combined EI terrain reduction as a single modifier (if any was accumulated)
+        toHit.finalizeEiModifier();
+
         // okay!
         return toHit;
     }
@@ -995,9 +1008,10 @@ public class ComputeToHit {
               (targetType == Targetable.TYPE_BLDG_IGNITE) ||
               (targetType == Targetable.TYPE_FUEL_TANK) ||
               (targetType == Targetable.TYPE_FUEL_TANK_IGNITE) ||
-              (target instanceof GunEmplacement);
+              (target.isBuildingEntityOrGunEmplacement());
 
-        if ((distance == 1) && isBuilding) {
+        if ((distance == 1) && isBuilding && (ae.moved != EntityMovementType.MOVE_SPRINT
+              && ae.moved != EntityMovementType.MOVE_VTOL_SPRINT)) {
             return Messages.getString("WeaponAttackAction.AdjBuilding");
         }
 
@@ -1528,11 +1542,12 @@ public class ComputeToHit {
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.MML) ||
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.NLRM) ||
                         (ammoType.getAmmoType() == AmmoType.AmmoTypeEnum.MEK_MORTAR)) &&
-                  (munition.contains(AmmoType.Munitions.M_SEMIGUIDED))) {
+                  (munition.contains(AmmoType.Munitions.M_SEMIGUIDED)) &&
+                  (Compute.isTargetTagged(target, game))) {
 
-                if (Compute.isTargetTagged(target, game)) {
-                    toHit.addModifier(-1, Messages.getString("WeaponAttackAction.SemiGuidedIndirect"));
-                }
+
+                toHit.addModifier(-1, Messages.getString("WeaponAttackAction.SemiGuidedIndirect"));
+
             } else if (!narcSpotter && (spotter != null)) {
                 // Unless the target has been tagged, or the spotter has an active command
                 // console
