@@ -32,6 +32,10 @@
  */
 package megamek.client.ui.util;
 
+import java.util.regex.Pattern;
+
+import megamek.client.ui.clientGUI.GUIPreferences;
+
 public enum DiscordFormat {
     // Text colors
     GRAY(30),
@@ -75,8 +79,17 @@ public enum DiscordFormat {
 
     public static final DiscordFormat NUMBER_COLOR = YELLOW;
     public static final DiscordFormat ROW_SHADING = BG_BLUEISH_BLACK;
+    private static final Pattern numberPattern = Pattern.compile("\\b\\d+\\b");
 
+    /**
+     * Colours every number in the text, if the Discord export preference asks for it. Each coloured number costs
+     * about a dozen characters of ANSI codes, which pushes many readouts past Discord's message limit, so it is off by
+     * default.
+     */
     public static String highlightNumbersForDiscord(String original) {
-        return original;
+        if (!GUIPreferences.getInstance().getBoolean(GUIPreferences.ADVANCED_DISCORD_EXPORT_COLOR_NUMBERS)) {
+            return original;
+        }
+        return numberPattern.matcher(original).replaceAll(DiscordFormat.NUMBER_COLOR + "$0" + DiscordFormat.WHITE);
     }
 }

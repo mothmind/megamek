@@ -580,25 +580,52 @@ class GeneralEntityReadout implements EntityReadout {
         } else if (formatting == ViewFormatting.DISCORD) {
             docStart = "```ansi\n";
             docEnd = "```";
-
-            sectionsToShow = filterDiscordSections(sectionsToShow);
         }
 
-        String formattedSections = Arrays.stream(ReadoutSections.values())
+        String formattedSections = formatSections(sectionsToShow, formatting);
+
+        if (formatting == ViewFormatting.DISCORD) {
+            int discordLimit = getDiscordCharacterLimit() - docStart.length() - docEnd.length();
+            formattedSections = fitToDiscordLimit(formattedSections, sectionsToShow, discordLimit);
+        }
+
+        return docStart + formattedSections + docEnd;
+    }
+
+    private String formatSections(Collection<ReadoutSections> sectionsToShow, ViewFormatting formatting) {
+        return Arrays.stream(ReadoutSections.values())
               .filter(sectionsToShow::contains)
               .map(this::sectionFor)
               .map(section -> formatSection(section, formatting))
               .collect(Collectors.joining());
+    }
 
-        int discordLimit = getDiscordCharacterLimit() - docStart.length() - docEnd.length();
-        if (formatting == ViewFormatting.DISCORD && formattedSections.length() > discordLimit) {
-            int safeLimit = Math.max(0, discordLimit - 3);
-            int lastSpace = formattedSections.lastIndexOf(" ", safeLimit);
-            int cutIndex = (lastSpace > 0) ? lastSpace : safeLimit;
-            formattedSections = formattedSections.substring(0, cutIndex) + "...";
+    /**
+     * Sections that may be dropped, in this order, when a Discord readout exceeds the message limit. Headline, base
+     * data, systems and loadout are never dropped; if the readout still does not fit, it is cut at a line break.
+     */
+    private static final List<ReadoutSections> DISCORD_DROP_ORDER = List.of(ReadoutSections.FLUFF,
+          ReadoutSections.INVALID, ReadoutSections.QUIRKS, ReadoutSections.AVAILABILITY, ReadoutSections.TECH_LEVEL,
+          ReadoutSections.COST_SOURCE);
+
+    private String fitToDiscordLimit(String text, Collection<ReadoutSections> sectionsToShow, int limit) {
+        List<ReadoutSections> sections = new ArrayList<>(sectionsToShow);
+        for (ReadoutSections droppable : DISCORD_DROP_ORDER) {
+            if (text.length() <= limit) {
+                break;
+            }
+            if (sections.remove(droppable)) {
+                text = formatSections(sections, ViewFormatting.DISCORD);
+            }
         }
 
-        return docStart + formattedSections + docEnd;
+        if (text.length() > limit) {
+            String ellipsis = "\n...";
+            int safeLimit = Math.max(0, limit - ellipsis.length());
+            int lastLineBreak = text.lastIndexOf('\n', safeLimit);
+            text = text.substring(0, (lastLineBreak > 0) ? lastLineBreak : safeLimit) + ellipsis;
+        }
+        return text;
     }
 
     private Collection<ReadoutSections> filterDiscordSections(Collection<ReadoutSections> sectionsToShow) {
@@ -641,7 +668,11 @@ class GeneralEntityReadout implements EntityReadout {
 
     @Override
     public String getFullReadout(@Nullable String fontName, ViewFormatting formatting) {
-        return getReadout(fontName, formatting, ReadoutSections.values());
+        Collection<ReadoutSections> sections = List.of(ReadoutSections.values());
+        if (formatting == ViewFormatting.DISCORD) {
+            sections = filterDiscordSections(sections);
+        }
+        return getReadout(fontName, formatting, sections);
     }
 
     protected ViewElement createTotalInternalElement() {

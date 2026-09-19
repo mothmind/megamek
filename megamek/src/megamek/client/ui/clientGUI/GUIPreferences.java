@@ -95,6 +95,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String ADVANCED_DISCORD_EXPORT_AVAILABILITY = "AdvancedDiscordExportAvailability";
     public static final String ADVANCED_DISCORD_EXPORT_FLUFF = "AdvancedDiscordExportFluff";
     public static final String ADVANCED_DISCORD_EXPORT_NITRO_LIMIT = "AdvancedDiscordExportNitroLimit";
+    public static final String ADVANCED_DISCORD_EXPORT_COLOR_NUMBERS = "AdvancedDiscordExportColorNumbers";
 
     /* --End advanced settings-- */
     public static final String BOARD_MOVE_DEFAULT_CLIMB_MODE = "BoardMoveDefaultClimbMode";
@@ -1029,6 +1030,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
         setDefault(ADVANCED_DISCORD_EXPORT_AVAILABILITY, false);
         setDefault(ADVANCED_DISCORD_EXPORT_FLUFF, false);
         setDefault(ADVANCED_DISCORD_EXPORT_NITRO_LIMIT, false);
+        setDefault(ADVANCED_DISCORD_EXPORT_COLOR_NUMBERS, false);
     }
 
     public void setDefault(String name, Color color) {
