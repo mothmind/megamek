@@ -38,7 +38,7 @@ import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.io.Serial;
 import java.util.*;
-import javax.swing.JOptionPane;
+import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 
@@ -85,6 +85,7 @@ import megamek.common.units.BuildingTarget;
 import megamek.common.units.Dropship;
 import megamek.common.units.Entity;
 import megamek.common.units.IBuilding;
+import megamek.common.units.Mek;
 import megamek.common.units.Tank;
 import megamek.common.units.Targetable;
 import megamek.common.weapons.Weapon;
@@ -118,6 +119,9 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         FIRE_NEXT_TARG("fireNextTarg"),
         FIRE_MODE("fireMode"),
         FIRE_FLIP_ARMS("fireFlipArms"),
+        FIRE_FLIP_MOUNT("fireFlipMount"),
+        FIRE_ROTATE_TURRET("fireRotateTurret"),
+        FIRE_ROTATE_TURRET_2("fireRotateTurret2"),
         FIRE_SEARCHLIGHT("fireSearchlight"),
         FIRE_CANCEL("fireCancel"),
         FIRE_DISENGAGE("fireDisengage"),
@@ -326,9 +330,10 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     /**
      * Have the panel register itself as a listener wherever it's needed.
      * <p>
-     * According to http://www-106.ibm.com/developerworks/java/library/j-jtp0618.html it is a major bad no-no to perform
-     * these registrations before the constructor finishes, so this function has to be called after the panel is
-     * created. Please note, this restriction only applies to listeners for objects that aren't on the panel itself.
+     * According to <a href="http://www-106.ibm.com/developerworks/java/library/j-jtp0618.html">IBM</a> it is a major
+     * bad no-no to perform these registrations before the constructor finishes, so this function has to be called after
+     * the panel is created. Please note, this restriction only applies to listeners for objects that aren't on the
+     * panel itself.
      */
     public void initializeListeners() {
         game.addGameListener(this);
@@ -340,6 +345,9 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         ArrayList<MegaMekButton> buttonList = new ArrayList<>();
         TargetingCommand[] commands = TargetingCommand.values();
         CommandComparator comparator = new CommandComparator();
+        // The two turret-rotate buttons belong side by side: pin the rear button's priority to the front one's, so
+        // the stable sort keeps them adjacent regardless of any saved button-order preferences.
+        TargetingCommand.FIRE_ROTATE_TURRET_2.setPriority(TargetingCommand.FIRE_ROTATE_TURRET.getPriority());
         Arrays.sort(commands, comparator);
         for (TargetingCommand cmd : commands) {
             if (cmd == TargetingCommand.FIRE_CANCEL) {
@@ -350,6 +358,17 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
                 continue;
             }
             if (cmd == TargetingCommand.FIRE_CLEAR_WEAPON && !(currentEntity() instanceof Tank)) {
+                continue;
+            }
+            // The Directional Torso Mount (BMM p.83) is a Mek-only quirk, so other unit types never show its button.
+            if ((cmd == TargetingCommand.FIRE_FLIP_MOUNT) && (currentEntity() != null)
+                  && !(currentEntity() instanceof Mek)) {
+                continue;
+            }
+            // The rear-turret rotate button exists only for dual-turret vehicles (the first rotate button then
+            // covers the front turret).
+            if ((cmd == TargetingCommand.FIRE_ROTATE_TURRET_2)
+                  && !((currentEntity() instanceof Tank tank) && !tank.hasNoDualTurret())) {
                 continue;
             }
             buttonList.add(buttons.get(cmd));
@@ -378,13 +397,13 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
 
             // If the selected entity is not on the board, use the next one.
             // ASSUMPTION: there will always be *at least one* entity on map.
-            if (null == currentEntity().getPosition()) {
+            if (currentEntity().getPosition() == null) {
 
                 // Walk through the list of entities for this player.
                 for (int nextId = client.getNextEntityNum(en); nextId != en; nextId = client.getNextEntityNum(nextId)) {
                     Entity nextEntity = game.getEntity(nextId);
 
-                    if (nextEntity != null && null != nextEntity.getPosition()) {
+                    if (nextEntity != null && nextEntity.getPosition() != null) {
                         currentEntity = nextId;
                         break;
                     }
@@ -392,7 +411,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
                 } // Check the player's next entity.
 
                 // We were *supposed* to have found an on-board entity.
-                if (null == currentEntity().getPosition()) {
+                if (currentEntity().getPosition() == null) {
                     logger.error("Could not find an on-board entity: {}", en);
                     return;
                 }
@@ -413,6 +432,11 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
             setTwistEnabled(entity.canChangeSecondaryFacing() && entity.getCrew().isActive());
             setFlipArmsEnabled(entity.canFlipArms() && entity.getCrew().isActive());
             updateSearchlight();
+            // Rebuild the button ribbon for the newly selected unit: the Flip Mount button is Mek-only, so the
+            // ribbon differs by unit type (see getButtonList()).
+            setupButtonPanel();
+            updateFlipMount();
+            updateRotateTurret();
 
             setFireModeEnabled(true);
 
@@ -448,7 +472,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
 
         GameTurn turn = clientgui.getClient().getMyTurn();
         // There's special processing for triggering AP Pods.
-        if ((turn instanceof TriggerAPPodTurn) && (null != currentEntity())) {
+        if ((turn instanceof TriggerAPPodTurn) && (currentEntity() != null)) {
             selectEntity(clientgui.getClient().getFirstEntityNum());
             disableButtons();
             TriggerAPPodDialog dialog = new TriggerAPPodDialog(clientgui.getFrame(), currentEntity());
@@ -459,7 +483,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
                 addAttack(actions.nextElement());
             }
             ready();
-        } else if ((turn instanceof TriggerBPodTurn) && (null != currentEntity())) {
+        } else if ((turn instanceof TriggerBPodTurn) && (currentEntity() != null)) {
             selectEntity(clientgui.getClient().getFirstEntityNum());
             disableButtons();
             TriggerBPodDialog dialog = new TriggerBPodDialog(clientgui, currentEntity(),
@@ -490,7 +514,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         // end my turn, then.
         Entity next = game.getNextEntity(game.getTurnIndex());
         if ((phase == game.getPhase())
-              && (null != next) && (null != currentEntity())
+            && (next != null) && (currentEntity() != null)
               && (next.getOwnerId() != currentEntity().getOwnerId())) {
             clientgui.maybeShowUnitDisplay();
         }
@@ -515,6 +539,9 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         setNextEnabled(false);
         butDone.setEnabled(false);
         setFlipArmsEnabled(false);
+        setFlipMountEnabled(false);
+        setRotateTurretEnabled(false);
+        setRotateRearTurretEnabled(false);
         setFireModeEnabled(false);
         setNextTargetEnabled(false);
         setDisengageEnabled(false);
@@ -533,7 +560,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         }
 
         // DropShip Artillery cannot be switched to "Direct" Fire
-        final WeaponType weaponType = (WeaponType) weaponMounted.getType();
+        final WeaponType weaponType = weaponMounted.getType();
         if ((currentEntity() instanceof Dropship) && (weaponType instanceof ArtilleryWeapon)) {
             return;
         }
@@ -673,7 +700,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     public void updateDisplayForPendingAttack(Mounted<?> mounted, WeaponAttackAction waa) {
         // put this and the rest of the method into a separate function for access
         // externally.
-        if ((null != mounted.getLinked())
+        if ((mounted.getLinked() != null)
               && (((WeaponType) mounted.getType()).getAmmoType() != AmmoType.AmmoTypeEnum.NA)) {
             Mounted<?> ammoMount = mounted.getLinked();
             waa.setAmmoId(ammoMount.getEntity().getEquipmentNum(ammoMount));
@@ -757,7 +784,8 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     /**
      * Removes all current fire
      */
-    private void clearAttacks() {
+    @Override
+    protected void clearAttacks() {
         // We may not have an entity selected yet (race condition).
         if (currentEntity() == null) {
             return;
@@ -898,6 +926,8 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
             clientgui.getUnitDisplay().wPan.clearToHit();
         }
         updateSearchlight();
+        updateFlipMount();
+        updateRotateTurret();
     }
 
     private boolean showDistanceAsMapSheets(Entity attacker, Targetable target, Mounted<?> weapon) {
@@ -955,7 +985,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
      * Get the next target. Return null if we don't have any targets.
      */
     private Entity getNextTarget() {
-        if (null == visibleTargets || visibleTargets.length == 0) {
+        if (visibleTargets == null || visibleTargets.length == 0) {
             return null;
         }
 
@@ -974,7 +1004,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     private void jumpToNextTarget() {
         Entity targ = getNextTarget();
 
-        if (null == targ) {
+        if (targ == null) {
             return;
         }
 
@@ -1028,11 +1058,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         }
 
         if (direction != currentEntity().getSecondaryFacing()) {
-            clearAttacks();
-            addAttack(new TorsoTwistAction(currentEntity, direction));
-            currentEntity().setSecondaryFacing(direction);
-            clientgui.updateFiringArc(currentEntity());
-            refreshAll();
+            applyTorsoTwist(direction);
         }
     }
 
@@ -1046,17 +1072,32 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     void torsoTwist(int twistDir) {
         int direction = currentEntity().getSecondaryFacing();
         if (twistDir == 0) {
-            clearAttacks();
-            direction = currentEntity().clipSecondaryFacing((direction + 5) % 6);
-            addAttack(new TorsoTwistAction(currentEntity, direction));
-            currentEntity().setSecondaryFacing(direction);
-            refreshAll();
+            applyTorsoTwist(currentEntity().clipSecondaryFacing((direction + 5) % 6));
         } else if (twistDir == 1) {
-            clearAttacks();
-            direction = currentEntity().clipSecondaryFacing((direction + 7) % 6);
-            addAttack(new TorsoTwistAction(currentEntity, direction));
-            currentEntity().setSecondaryFacing(direction);
-            refreshAll();
+            applyTorsoTwist(currentEntity().clipSecondaryFacing((direction + 7) % 6));
+        }
+    }
+
+    /**
+     * Declares a torso twist to the given secondary facing, preserving state that is declared independently of the
+     * twist. {@link #clearAttacks()} drops every pending action and reselects the first weapon, so this keeps the
+     * player's selected weapon selected and re-adds any pending Directional Torso Mount arc (BMM p.83) - matching the
+     * firing phase, so a Flip Mount and a torso twist can be declared together in either order.
+     *
+     * @param direction the secondary facing to twist to
+     */
+    private void applyTorsoTwist(int direction) {
+        WeaponMounted selectedWeapon = clientgui.getUnitDisplay().wPan.getSelectedWeapon();
+        List<DirectionalMountFacingAction> mountFacings = pendingDirectionalMountFacings(NO_EXCLUDED_LOCATION);
+        clearAttacks();
+        addAttack(new TorsoTwistAction(currentEntity, direction));
+        currentEntity().setSecondaryFacing(direction);
+        for (DirectionalMountFacingAction mountFacing : mountFacings) {
+            addAttack(mountFacing);
+        }
+        refreshAll();
+        if (selectedWeapon != null) {
+            clientgui.getUnitDisplay().wPan.selectWeapon(selectedWeapon);
         }
     }
 
@@ -1064,7 +1105,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     // BoardListener
     //
     @Override
-    public void hexMoused(BoardViewEvent b) {
+    public void hexMoused(BoardViewEvent event) {
         // Are we ignoring events?
         if (isIgnoringEvents()) {
             return;
@@ -1072,34 +1113,31 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
 
         // ignore buttons other than 1
         if (!clientgui.getClient().isMyTurn()
-              || ((b.getButton() != MouseEvent.BUTTON1))) {
+              || ((event.getButton() != MouseEvent.BUTTON1))) {
             return;
         }
         // control pressed means a line of sight check.
         // added ALT_MASK by kenn
-        if (((b.getModifiers() & InputEvent.CTRL_DOWN_MASK) != 0)
-              || ((b.getModifiers() & InputEvent.ALT_DOWN_MASK) != 0)) {
+        if (((event.getModifiers() & InputEvent.CTRL_DOWN_MASK) != 0)
+              || ((event.getModifiers() & InputEvent.ALT_DOWN_MASK) != 0)) {
             return;
         }
         // check for shifty goodness
-        if (shiftHeld == ((b.getModifiers() & InputEvent.SHIFT_DOWN_MASK) == 0)) {
-            shiftHeld = (b.getModifiers() & InputEvent.SHIFT_DOWN_MASK) != 0;
+        if (shiftHeld == ((event.getModifiers() & InputEvent.SHIFT_DOWN_MASK) == 0)) {
+            shiftHeld = (event.getModifiers() & InputEvent.SHIFT_DOWN_MASK) != 0;
         }
 
-        if (b.getType() == BoardViewEvent.BOARD_HEX_DRAGGED) {
+        if (event.getType() == BoardViewEvent.BOARD_HEX_DRAGGED) {
             if (shiftHeld || twisting) {
                 if ((currentEntity() != null) && !currentEntity().getAlreadyTwisted()) {
                     updateFlipArms(false);
-                    torsoTwist(b.getCoords());
+                    torsoTwist(event.getCoords());
                 }
             }
-            b.getBoardView().cursor(b.getCoords());
-        } else if (b.getType() == BoardViewEvent.BOARD_HEX_CLICKED) {
+        } else if (event.getType() == BoardViewEvent.BOARD_HEX_CLICKED) {
             twisting = false;
-            if (!shiftHeld) {
-                b.getBoardView().select(b.getCoords());
-            }
         }
+        applyHexMouseAction(event, shiftHeld);
     }
 
     @Override
@@ -1171,7 +1209,7 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
         // Do we have a single choice?
         if (targets.size() == 1) {
             // Return that choice.
-            choice = targets.get(0);
+            choice = targets.getFirst();
         } else if (targets.size() > 1) {
             // If we have multiple choices, display a selection dialog.
             choice = TargetChoiceDialog.showSingleChoiceDialog(clientgui.getFrame(),
@@ -1274,6 +1312,12 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
             jumpToNextTarget();
         } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_FLIP_ARMS.getCmd())) {
             updateFlipArms(!currentEntity().getArmsFlipped());
+        } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_FLIP_MOUNT.getCmd())) {
+            flipDirectionalMount();
+        } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_ROTATE_TURRET.getCmd())) {
+            rotateSelectedMount();
+        } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_ROTATE_TURRET_2.getCmd())) {
+            rotateRearTurret();
         } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_MODE.getCmd())) {
             changeMode(true);
         } else if (ev.getActionCommand().equals(TargetingCommand.FIRE_CANCEL.getCmd())) {
@@ -1364,6 +1408,55 @@ public class TargetingPhaseDisplay extends AttackPhaseDisplay implements ListSel
     private void setFlipArmsEnabled(boolean enabled) {
         buttons.get(TargetingCommand.FIRE_FLIP_ARMS).setEnabled(enabled);
         clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_FLIP_ARMS.getCmd(), enabled);
+    }
+
+    @Override
+    protected void setFlipMountEnabled(boolean enabled) {
+        buttons.get(TargetingCommand.FIRE_FLIP_MOUNT).setEnabled(enabled);
+        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_FLIP_MOUNT.getCmd(), enabled);
+    }
+
+    @Override
+    protected void setRotateTurretEnabled(boolean enabled) {
+        buttons.get(TargetingCommand.FIRE_ROTATE_TURRET).setEnabled(enabled);
+        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_ROTATE_TURRET.getCmd(), enabled);
+    }
+
+    @Override
+    protected void setRotateRearTurretEnabled(boolean enabled) {
+        buttons.get(TargetingCommand.FIRE_ROTATE_TURRET_2).setEnabled(enabled);
+        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_ROTATE_TURRET_2.getCmd(), enabled);
+    }
+
+    @Override
+    protected void setRotateTurretLabel(boolean dualTurretTank) {
+        buttons.get(TargetingCommand.FIRE_ROTATE_TURRET).setText(Messages.getString(
+              dualTurretTank ? "TargetingPhaseDisplay.fireRotateTurretFront"
+                    : "TargetingPhaseDisplay.fireRotateTurret"));
+    }
+
+    /**
+     * Refreshes the targeting-phase target panel after a Directional Torso Mount arc change. See
+     * {@link AttackPhaseDisplay#flipDirectionalMount()}, which drives the shared flip logic.
+     */
+    @Override
+    protected void refreshTargetAfterMountChange() {
+        updateTarget();
+    }
+
+    /**
+     * Declares a torso/turret twist to the given facing through the targeting-phase twist path, used by the Rotate
+     * Turret dialog for vehicle main turrets. See {@link AttackPhaseDisplay#rotateSelectedMount()}.
+     */
+    @Override
+    protected void declareSecondaryFacing(int facing) {
+        if ((currentEntity() == null) || currentEntity().getAlreadyTwisted()) {
+            return;
+        }
+        int direction = currentEntity().clipSecondaryFacing(facing);
+        if (direction != currentEntity().getSecondaryFacing()) {
+            applyTorsoTwist(direction);
+        }
     }
 
     private void setNextEnabled(boolean enabled) {

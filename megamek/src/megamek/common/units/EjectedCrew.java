@@ -38,9 +38,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 import megamek.common.Player;
+import megamek.common.annotations.Nullable;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.equipment.EquipmentTypeLookup;
+import megamek.common.exceptions.LocationFullException;
 import megamek.common.game.Game;
+import megamek.common.game.InitiativeRoll;
 import megamek.common.options.OptionsConstants;
 import megamek.common.weapons.infantry.InfantryWeapon;
 import megamek.logging.MMLogger;
@@ -51,7 +54,8 @@ import megamek.logging.MMLogger;
  *
  * @author Klaus Mittag
  */
-public class EjectedCrew extends Infantry {
+public class EjectedCrew extends ConvInfantry {
+
     private static final MMLogger logger = MMLogger.create(EjectedCrew.class);
 
     protected int originalRideId;
@@ -80,14 +84,14 @@ public class EjectedCrew extends Infantry {
         logger.debug("Ejecting crew size: {}", originalRide.getCrew().getSize());
         setChassis(VEE_EJECT_NAME);
         setModel(originalRide.getCrew().getName());
-        setInitiative(originalRide.getInitiative());
+        setInitiative(new InitiativeRoll(originalRide.getInitiative()));
 
         // Generate the display name, then add the original ride's name.
         setDisplayName(getDisplayName() + " of " + originalRide.getDisplayName());
 
         // Finish initializing this unit.
         setOwner(originalRide.getOwner());
-        initializeInternal(originalRide.getCrew().getSize(), Infantry.LOC_INFANTRY);
+        initializeInternal(originalRide.getCrew().getSize(), LOC_INFANTRY);
         if (originalRide.getCrew().getSlotCount() > 1) {
             int dead = 0;
             for (int i = 0; i < originalRide.getCrew().getSlotCount(); i++) {
@@ -95,22 +99,79 @@ public class EjectedCrew extends Infantry {
                     dead++;
                 }
             }
-            setInternal(originalRide.getCrew().getSize() - dead, Infantry.LOC_INFANTRY);
+            setInternal(originalRide.getCrew().getSize() - dead, LOC_INFANTRY);
         }
         setOriginalRideId(originalRide.getId());
         setOriginalRideExternalId(originalRide.getExternalIdAsString());
-        Game tmpGame = originalRide.getGame();
-        if (tmpGame != null
-              && (!(this instanceof MekWarrior)
-              || tmpGame.getOptions().booleanOption(OptionsConstants.ADVANCED_ARMED_MEKWARRIORS))) {
-            try {
-                addEquipment(EquipmentType.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE),
-                      Infantry.LOC_INFANTRY);
-                setPrimaryWeapon((InfantryWeapon) InfantryWeapon.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE));
-            } catch (Exception ex) {
-                logger.error("", ex);
-            }
+        Game rideGame = originalRide.getGame();
+        // Whoever was not given a sidearm or a Small Arms skill gets their ride's defaults from here on. Recorded
+        // on the shared crew, so a crew who later leaves an escape pod already carries them.
+        CrewSidearmRules.markSmallArmsInPlay(originalRide.getCrew(), rideGame);
+        CrewSidearmRules.recordDefaultEquipment(originalRide, rideGame);
+        armOnLeaving(CrewSidearmRules.crewSidearm(originalRide, rideGame), rideGame, originalRide.getDisplayName());
+        issueArmorKitIfWorn(CrewArmorKitRules.crewArmorKit(originalRide, rideGame), originalRide.getDisplayName());
+    }
+
+    /**
+     * Puts a weapon in this crew's hands as they leave their unit: the sidearm they were issued if they have one,
+     * otherwise the generic rifle every crew has always been handed.
+     * <p>
+     * Whether they may be armed at all is unchanged. Vehicle and aerospace crews always are; a MekWarrior is armed
+     * only under {@link OptionsConstants#ADVANCED_ARMED_MEKWARRIORS}, whatever they were issued. The weapon is
+     * both mounted, so it appears in the weapon list and can be fired, and set as the primary weapon, which is
+     * what the damage per trooper is read from.
+     *
+     * @param sidearm  the weapon the crew were issued, or {@code null} for the default
+     * @param game     the game whose options decide whether this crew may be armed, or {@code null}
+     * @param rideName the unit they are leaving, for the log
+     */
+    private void armOnLeaving(@Nullable InfantryWeapon sidearm, @Nullable Game game, String rideName) {
+        if (game == null) {
+            logger.debug("[CrewSidearm] {}: left {} with no game to ask, so unarmed", getDisplayName(), rideName);
+            return;
         }
+        boolean isMekWarrior = this instanceof MekWarrior;
+        boolean mekWarriorsMayBeArmed = game.getOptions().booleanOption(OptionsConstants.ADVANCED_ARMED_MEKWARRIORS);
+        if (isMekWarrior && !mekWarriorsMayBeArmed) {
+            logger.debug("[CrewSidearm] {}: left {} unarmed, Armed MekWarriors is off", getDisplayName(), rideName);
+            return;
+        }
+        InfantryWeapon weapon = (sidearm != null)
+              ? sidearm
+              : (InfantryWeapon) EquipmentType.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE);
+        if (weapon == null) {
+            // The equipment tables have not been loaded, which only a test can arrange.
+            logger.error("[CrewSidearm] {}: no weapon to hand a crew leaving {}", getDisplayName(), rideName);
+            return;
+        }
+        try {
+            addEquipment(weapon, LOC_INFANTRY);
+            setPrimaryWeapon(weapon);
+        } catch (LocationFullException exception) {
+            logger.error("Could not arm a crew leaving " + rideName, exception);
+            return;
+        }
+        logger.debug("[CrewSidearm] {}: left {} carrying {}{}", getDisplayName(), rideName, weapon.getName(),
+              (sidearm == null) ? " (the default rifle)" : "");
+    }
+
+    /**
+     * Dresses this crew in whatever they were wearing aboard their unit.
+     * <p>
+     * Fitted through {@link ConvInfantry#setArmorKit}, which is the method that owns the kit: it also applies the
+     * kit's derived state - the space suit flag, encumbrance, the sneak properties and the damage divisor - none of
+     * which happens if the equipment is merely added to the list. With that done, every existing rule about what
+     * conventional infantry survives reads the kit, and needs nothing new written for it.
+     *
+     * @param armorKit the kit the crew were wearing, or {@code null} for none
+     * @param rideName the unit they are leaving, for the log
+     */
+    private void issueArmorKitIfWorn(@Nullable EquipmentType armorKit, String rideName) {
+        if (armorKit == null) {
+            return;
+        }
+        setArmorKit(armorKit);
+        logger.debug("[CrewArmorKit] {}: left {} wearing {}", getDisplayName(), rideName, armorKit.getName());
     }
 
     /**
@@ -129,7 +190,7 @@ public class EjectedCrew extends Infantry {
         // Generate the display name, then add the original ride's name.
         setDisplayName(getDisplayName() + " of " + originalRide.getDisplayName());
 
-        initializeInternal(escapedThisRound, Infantry.LOC_INFANTRY);
+        initializeInternal(escapedThisRound, LOC_INFANTRY);
 
         setOriginalRideId(originalRide.getId());
         setOriginalRideExternalId(originalRide.getExternalIdAsString());
@@ -146,7 +207,7 @@ public class EjectedCrew extends Infantry {
         // assign some arbitrarily large number here for the internal so that locations
         // will get
         // the actual current number of trooper correct.
-        initializeInternal(Integer.MAX_VALUE, Infantry.LOC_INFANTRY);
+        initializeInternal(Integer.MAX_VALUE, LOC_INFANTRY);
     }
 
     public EjectedCrew(Crew crew, Player owner, Game game) {
@@ -157,7 +218,7 @@ public class EjectedCrew extends Infantry {
 
         // Finish initializing this unit.
         setOwner(owner);
-        initializeInternal(crew.getSize(), Infantry.LOC_INFANTRY);
+        initializeInternal(crew.getSize(), LOC_INFANTRY);
         if (crew.getSlotCount() > 1) {
             int dead = 0;
             for (int i = 0; i < crew.getSlotCount(); i++) {
@@ -165,17 +226,15 @@ public class EjectedCrew extends Infantry {
                     dead++;
                 }
             }
-            setInternal(crew.getSize() - dead, Infantry.LOC_INFANTRY);
+            setInternal(crew.getSize() - dead, LOC_INFANTRY);
         }
-        if (game != null && (!(this instanceof MekWarrior)
-              || gameOptions().booleanOption(OptionsConstants.ADVANCED_ARMED_MEKWARRIORS))) {
-            try {
-                addEquipment(EquipmentType.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE), Infantry.LOC_INFANTRY);
-                setPrimaryWeapon((InfantryWeapon) InfantryWeapon.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE));
-            } catch (Exception ex) {
-                logger.error("", ex);
-            }
-        }
+        // The ride is gone by the time a crew steps out of an escape pod, so the crew itself is asked what it
+        // carries and wears. Before this the pod path armed the crew but never dressed them, so a tank crew who
+        // rode out in a pod stepped out in coveralls whatever they had been issued.
+        boolean isClanCrew = crew.isClanPilot();
+        CrewSidearmRules.markSmallArmsInPlay(crew, game);
+        armOnLeaving(CrewSidearmRules.crewSidearm(crew, isClanCrew, game), game, crew.getName());
+        issueArmorKitIfWorn(CrewArmorKitRules.crewArmorKit(crew, isClanCrew, game), crew.getName());
     }
 
     /**
@@ -195,10 +254,12 @@ public class EjectedCrew extends Infantry {
     /**
      * @return the <code>int</code> external id of this MW's original ride
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getOriginalRideExternalId() {
         return Integer.parseInt(originalRideExternalId);
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public String getOriginalRideExternalIdAsString() {
         return originalRideExternalId;
     }
@@ -210,6 +271,7 @@ public class EjectedCrew extends Infantry {
         this.originalRideExternalId = originalRideExternalId;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public void setOriginalRideExternalId(int originalRideExternalId) {
         this.originalRideExternalId = Integer.toString(originalRideExternalId);
     }
@@ -226,6 +288,7 @@ public class EjectedCrew extends Infantry {
      * Convenience method to return all crew from other craft aboard from the above Map
      *
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getTotalOtherCrew() {
         int toReturn = 0;
         for (String name : getNOtherCrew().keySet()) {
@@ -260,6 +323,7 @@ public class EjectedCrew extends Infantry {
      * Convenience method to return all passengers aboard from the above Map
      *
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getTotalPassengers() {
         int toReturn = 0;
         for (String name : getPassengers().keySet()) {
@@ -281,19 +345,6 @@ public class EjectedCrew extends Infantry {
             passengers.put(id, n);
         }
     }
-
-    /*
-     * @Override
-     * Taharqa: I don't think this should be here and I can't find a place where it
-     * is
-     * actually necessary. If you set this crew as unejected it will carry on to the
-     * original unit
-     * and the after battle MULs and processing will be wrong
-     * public void newRound(int number) {
-     * super.newRound(number);
-     * getCrew().setEjected(false);
-     * }
-     */
 
     /**
      * Because they deploy in their vehicles rather than as infantry, crews (including MekWarriors) never count as

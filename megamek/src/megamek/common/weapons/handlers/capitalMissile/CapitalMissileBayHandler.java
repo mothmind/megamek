@@ -118,10 +118,10 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
             if (entityTarget != null) {
                 if ((weaponType.getAmmoType() != AmmoType.AmmoTypeEnum.NA)
                       && (weapon.getLinked() != null)
-                      && (weapon.getLinked().getType() instanceof AmmoType ammoType)) {
-                    if (!ammoType.getMunitionType().contains(AmmoType.Munitions.M_STANDARD)) {
+                      && (weapon.getLinked().getType() instanceof AmmoType linkedAmmoType)) {
+                    if (!linkedAmmoType.getMunitionType().contains(AmmoType.Munitions.M_STANDARD)) {
                         report.messageId = 3116;
-                        report.add(ammoType.getSubMunitionName());
+                        report.add(linkedAmmoType.getSubMunitionName());
                     }
                 }
                 report.addDesc(entityTarget);
@@ -279,7 +279,7 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
             if (bMissed && id != vPhaseReport.size()) {
                 vPhaseReport.get(id - 1).newlines--;
                 vPhaseReport.get(id).indent(2);
-                vPhaseReport.get(vPhaseReport.size() - 1).newlines++;
+                vPhaseReport.getLast().newlines++;
             }
 
             // Make sure the player knows when his attack causes no damage.
@@ -315,7 +315,7 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
         for (WeaponMounted bayW : weapon.getBayWeapons()) {
             // check the currently loaded ammo
             AmmoMounted bayWAmmo = bayW.getLinkedAmmo();
-            if (null == bayWAmmo || bayWAmmo.getUsableShotsLeft() < 1) {
+            if (bayWAmmo == null || bayWAmmo.getUsableShotsLeft() < 1) {
                 // try loading something else
                 attackingEntity.loadWeaponWithSameAmmo(bayW);
                 bayWAmmo = bayW.getLinkedAmmo();
@@ -366,13 +366,13 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
                 if (current_av > 0) {
                     int shots = bayW.getCurrentShots();
                     for (int i = 0; i < shots; i++) {
-                        if (null == bayWAmmo
-                              || bayWAmmo.getUsableShotsLeft() < 1) {
+                        if (bayWAmmo == null
+                            || bayWAmmo.getUsableShotsLeft() < 1) {
                             // try loading something else
                             attackingEntity.loadWeaponWithSameAmmo(bayW);
                             bayWAmmo = bayW.getLinkedAmmo();
                         }
-                        if (null != bayWAmmo) {
+                        if (bayWAmmo != null) {
                             bayWAmmo.setShotsLeft(bayWAmmo.getBaseShotsLeft() - 1);
                         }
                     }
@@ -587,10 +587,10 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
         if (entityTarget != null) {
             if ((weaponType.getAmmoType() != AmmoType.AmmoTypeEnum.NA)
                   && (weapon.getLinked() != null)
-                  && (weapon.getLinked().getType() instanceof AmmoType ammoType)) {
-                if (!ammoType.getMunitionType().contains(AmmoType.Munitions.M_STANDARD)) {
+                  && (weapon.getLinked().getType() instanceof AmmoType linkedAmmoType)) {
+                if (!linkedAmmoType.getMunitionType().contains(AmmoType.Munitions.M_STANDARD)) {
                     report.messageId = 3116;
-                    report.add(ammoType.getSubMunitionName());
+                    report.add(linkedAmmoType.getSubMunitionName());
                 }
             }
             report.addDesc(entityTarget);
@@ -768,7 +768,7 @@ public class CapitalMissileBayHandler extends AmmoBayWeaponHandler {
                     if (vPhaseReport.size() > replaceReport) {
                         // fix the reporting - is there a better way to do this
                         Report currentReport = vPhaseReport.get(replaceReport);
-                        while (null != currentReport) {
+                        while (currentReport != null) {
                             vPhaseReport.remove(replaceReport);
                             if ((currentReport.newlines > 0) || (vPhaseReport.size() <= replaceReport)) {
                                 currentReport = null;

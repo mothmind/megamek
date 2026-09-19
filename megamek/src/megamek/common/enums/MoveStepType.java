@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2000-2005 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2003-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2003-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -62,6 +62,8 @@ public enum MoveStepType {
     CLEAR_MINEFIELD(false, "ClearMinefield"),
     UP(false, "U"),
     DOWN(false, "D"),
+    ELEVATOR_ASCEND(false, "ElevUp"),
+    ELEVATOR_DESCEND(false, "ElevDn"),
     SEARCHLIGHT(false, "SLight"),
     LAY_MINE(false, "LayMine"),
     HULL_DOWN(false, "HullDown"),
@@ -69,7 +71,14 @@ public enum MoveStepType {
     CLIMB_MODE_OFF(false, "CM-"),
     SWIM(false, "Swim"),
     DIG_IN(false, "DigIn"),
+    HIT_THE_DECK(false, "HitDeck"),
     FORTIFY(false, "Fortify"),
+    CLEAR_RUBBLE(false, "ClearRubble"),
+    BUILD_BRIDGE(false, "BuildBridge"),
+    CANCEL_BRIDGE(false, "CancelBridge"),
+    RESUME_BRIDGE(false, "ResumeBridge"),
+    PAUSE_BRIDGE(false, "PauseBridge"),
+    ABANDON_BRIDGE(false, "AbandonBridge"),
     SHAKE_OFF_SWARMERS(false, "ShakeOffSwarmers"),
     TAKEOFF(false, "Takeoff"),
     VERTICAL_TAKE_OFF(false, "Vertical Takeoff"),
@@ -99,6 +108,9 @@ public enum MoveStepType {
     DROP(false, "Drop"),
     VERTICAL_LAND(false, "Vertical Landing"),
     MOUNT(false, "Mount"),
+    LOAD_BY_CRANE(false, "LoadByCrane"),
+    UNLOAD_BY_CRANE(false, "UnloadByCrane"),
+    STOP_CRANE_OPERATION(false, "StopCraneOperation"),
     UNDOCK(false, "Undock"),
     TAKE_COVER(false, "TakeCover"),
     CONVERT_MODE(false, "ConvMode"),
@@ -109,7 +121,8 @@ public enum MoveStepType {
     CHAFF(false, "Chaff"),
     PICKUP_CARGO(false, "Pickup Cargo"),
     DROP_CARGO(false, "Drop Cargo"),
-    CHANGE_BOARD(true, "Change Board");
+    CHANGE_BOARD(true, "Change Board"),
+    DEPLOY(false, "Deploy");
 
     private final boolean entersNewHex;
     private final String humanReadableLabel;
@@ -154,6 +167,7 @@ public enum MoveStepType {
      *
      * @throws IllegalArgumentException if no matching type is found
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static MoveStepType fromLabel(String label) {
         MoveStepType type = LABEL_TO_ENUM.get(label);
         if (type == null) {

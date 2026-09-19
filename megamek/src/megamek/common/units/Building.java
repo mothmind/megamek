@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2000-2002 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2003-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2003-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -46,6 +46,7 @@ import java.util.Vector;
 
 import megamek.common.Report;
 import megamek.common.board.Board;
+import megamek.common.board.Coords;
 import megamek.common.board.CubeCoords;
 import megamek.common.compute.Compute;
 import megamek.common.enums.BasementType;
@@ -84,7 +85,8 @@ public class Building implements Serializable {
     private final int bldgClass;
 
     /**
-     * The height of the building (BLDG_ELEV). Individual hexes start with this height and can be set to 0 when destroyed.
+     * The height of the building (BLDG_ELEV). Individual hexes start with this height and can be set to 0 when
+     * destroyed.
      */
     private int buildingHeight;
 
@@ -161,19 +163,20 @@ public class Building implements Serializable {
     }
 
     /**
-     * Add a hex to this building at the given RELATIVE coordinates.
-     * All coordinates are relative to the building's origin (0,0,0).
-     *
-     * Building stores everything in its own local coordinate space using CubeCoords.
-     * BuildingTerrain and AbstractBuildingEntity handle translation between board Coords and relative CubeCoords.
+     * Add a hex to this building at the given RELATIVE coordinates. All coordinates are relative to the building's
+     * origin (0,0,0).
+     * <p>
+     * Building stores everything in its own local coordinate space using CubeCoords. BuildingTerrain and
+     * AbstractBuildingEntity handle translation between board Coords and relative CubeCoords.
      *
      * @param relativeCoords the relative <code>CubeCoords</code> of the hex within the building
-     * @param cf the construction factor for this hex
-     * @param armorValue the armor value for this hex
-     * @param basementType the basement type for this hex
-     * @param collapsed whether the basement is collapsed
+     * @param cf             the construction factor for this hex
+     * @param armorValue     the armor value for this hex
+     * @param basementType   the basement type for this hex
+     * @param collapsed      whether the basement is collapsed
      */
-    public void addHex(CubeCoords relativeCoords, int cf, int armorValue, BasementType basementType, boolean collapsed) {
+    public void addHex(CubeCoords relativeCoords, int cf, int armorValue, BasementType basementType,
+          boolean collapsed) {
         if (isIn(relativeCoords)) {
             return; // Already added
         }
@@ -260,7 +263,7 @@ public class Building implements Serializable {
      *
      * @return the <code>int</code> code of the building's construction type.
      */
-    
+
     public BuildingType getBuildingType() {
         return type;
     }
@@ -270,7 +273,7 @@ public class Building implements Serializable {
      *
      * @return the <code>int</code> code of the building's classification.
      */
-    
+
     public int getBldgClass() {
         return bldgClass;
     }
@@ -304,8 +307,8 @@ public class Building implements Serializable {
     }
 
     /**
-     * Roll what kind of basement this building has at the given RELATIVE coordinates.
-     * Building works in relative CubeCoords - BuildingTerrain/BuildingEntity handle board coord translation.
+     * Roll what kind of basement this building has at the given RELATIVE coordinates. Building works in relative
+     * CubeCoords - BuildingTerrain/BuildingEntity handle board coord translation.
      *
      * @param coords       the RELATIVE <code>CubeCoords</code> of the building hex to roll for
      * @param vPhaseReport the {@link Report} <code>Vector</code> containing the phase report
@@ -320,20 +323,7 @@ public class Building implements Serializable {
             Roll diceRoll = Compute.rollD6(2);
             r.add(diceRoll);
 
-            BasementType rolledType;
-            if (diceRoll.getIntValue() == 2) {
-                rolledType = BasementType.TWO_DEEP_FEET;
-            } else if (diceRoll.getIntValue() == 3) {
-                rolledType = BasementType.ONE_DEEP_FEET;
-            } else if (diceRoll.getIntValue() == 4 || diceRoll.getIntValue() == 10) {
-                rolledType = BasementType.ONE_DEEP_NORMAL;
-            } else if (diceRoll.getIntValue() == 11) {
-                rolledType = BasementType.ONE_DEEP_HEAD;
-            } else if (diceRoll.getIntValue() == 12) {
-                rolledType = BasementType.TWO_DEEP_HEAD;
-            } else {
-                rolledType = BasementType.NONE;
-            }
+            BasementType rolledType = basementTypeForRoll(diceRoll.getIntValue());
 
             basement.put(coords, rolledType);
             r.add(rolledType.toString());
@@ -343,6 +333,28 @@ public class Building implements Serializable {
         }
 
         return false;
+    }
+
+    /**
+     * The Basements Table (TW p. 179): 2 is a two-level basement entered feet first, 3 a one-level basement entered
+     * feet first, 4 and 10 a one-level basement with a normal fall, 9 a small basement that only infantry can enter,
+     * 11 a one-level basement entered head first and 12 a two-level basement entered head first. Every other result
+     * is no basement.
+     *
+     * @param roll the 2D6 result
+     *
+     * @return the basement type for that result
+     */
+    static BasementType basementTypeForRoll(int roll) {
+        return switch (roll) {
+            case 2 -> BasementType.TWO_DEEP_FEET;
+            case 3 -> BasementType.ONE_DEEP_FEET;
+            case 4, 10 -> BasementType.ONE_DEEP_NORMAL;
+            case 9 -> BasementType.ONE_DEEP_NORMAL_INFANTRY_ONLY;
+            case 11 -> BasementType.ONE_DEEP_HEAD;
+            case 12 -> BasementType.TWO_DEEP_HEAD;
+            default -> BasementType.NONE;
+        };
     }
 
     /**
@@ -435,8 +447,8 @@ public class Building implements Serializable {
      * Set the height of a specific building hex. Call this method when a hex is destroyed (set to 0).
      *
      * @param coords the <code>CubeCoords</code> of the hex in question
-     * @param h      the <code>int</code> value of the building hex's height. This value must be greater than or equal to
-     *               zero.
+     * @param h      the <code>int</code> value of the building hex's height. This value must be greater than or equal
+     *               to zero.
      *
      * @throws IllegalArgumentException if the passed value is less than zero
      */
@@ -471,7 +483,7 @@ public class Building implements Serializable {
      *
      * @return the <code>String</code> name of this building.
      */
-    
+
     public String getName() {
         return name;
     }
@@ -528,22 +540,31 @@ public class Building implements Serializable {
         burning.put(coords, onFire);
     }
 
-    public void addDemolitionCharge(int playerId, int damage, CubeCoords pos) {
-        DemolitionCharge charge = new DemolitionCharge(playerId, damage, pos.toOffset());
+    /**
+     * Adds a demolition charge to this building. The position is stored as absolute board coordinates (not
+     * building-relative coordinates) because all consumers of {@link DemolitionCharge#pos} - the touch-off menu, the
+     * end-phase building lookup and the damage application - operate on board coordinates.
+     *
+     * @param playerId the ID of the player that owns the charge
+     * @param damage   the damage the charge inflicts when detonated
+     * @param pos      the absolute board {@link Coords} of the building hex the charge is placed in
+     */
+    public void addDemolitionCharge(int playerId, int damage, Coords pos) {
+        DemolitionCharge charge = new DemolitionCharge(playerId, damage, pos);
         demolitionCharges.add(charge);
     }
 
-    
+
     public void removeDemolitionCharge(DemolitionCharge charge) {
         demolitionCharges.remove(charge);
     }
 
-    
+
     public List<DemolitionCharge> getDemolitionCharges() {
         return demolitionCharges;
     }
 
-    
+
     public void setDemolitionCharges(List<DemolitionCharge> charges) {
         demolitionCharges = charges;
     }
@@ -580,7 +601,7 @@ public class Building implements Serializable {
         basementCollapsed.put(coords, collapsed);
     }
 
-    
+
     public int getBoardId() {
         return boardId;
     }

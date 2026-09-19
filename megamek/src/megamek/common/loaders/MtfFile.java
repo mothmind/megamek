@@ -53,24 +53,10 @@ import megamek.common.TechConstants;
 import megamek.common.battleArmor.BattleArmor;
 import megamek.common.enums.Faction;
 import megamek.common.enums.TechBase;
-import megamek.common.equipment.AmmoType;
-import megamek.common.equipment.Engine;
-import megamek.common.equipment.EquipmentType;
-import megamek.common.equipment.EquipmentTypeLookup;
-import megamek.common.equipment.LiftHoist;
-import megamek.common.equipment.MiscType;
-import megamek.common.equipment.Mounted;
-import megamek.common.equipment.WeaponType;
+import megamek.common.equipment.*;
 import megamek.common.exceptions.LocationFullException;
-import megamek.common.units.BipedMek;
-import megamek.common.units.Entity;
-import megamek.common.units.LandAirMek;
-import megamek.common.units.Mek;
-import megamek.common.units.QuadMek;
-import megamek.common.units.QuadVee;
+import megamek.common.units.*;
 import megamek.common.units.System;
-import megamek.common.units.TripodMek;
-import megamek.common.units.UnitRole;
 import megamek.logging.MMLogger;
 
 /**
@@ -91,8 +77,10 @@ public class MtfFile implements IMekLoader {
     private String chassisConfig;
     private String techBase;
     private String techYear;
+    private String originalTechYear = ORIGINAL_ERA;
     private String rulesLevel;
-    private String source = "Source:";
+    private String source = SOURCE;
+    private String published = PUBLISHED;
 
     private String tonnage;
     private String engine;
@@ -111,6 +99,9 @@ public class MtfFile implements IMekLoader {
 
     private String armorType;
     private final String[] armorValues = new String[12];
+    private final Map<Integer, String> frankenMekStructureValues = new HashMap<>();
+    private final Map<Integer, String> frankenMekLocationSources = new HashMap<>();
+    private final Map<Integer, String> frankenMekLocationSourceTypes = new HashMap<>();
 
     private final String[][] critData;
     private final List<String> noCritEquipment = new ArrayList<>();
@@ -131,7 +122,12 @@ public class MtfFile implements IMekLoader {
 
     private int bv = 0;
     private String role;
+    private String missionRoles;
     private String faction;
+    private String unitFileUUID;
+    private String refitFromUUID;
+
+    private final List<String> availabilityLines = new ArrayList<>();
 
     private final Map<EquipmentType, Mounted<?>> hSharedEquip = new HashMap<>();
     private final List<Mounted<?>> vSplitWeapons = new ArrayList<>();
@@ -162,7 +158,9 @@ public class MtfFile implements IMekLoader {
     public static final String CONFIG = "config:";
     public static final String TECH_BASE = "techbase:";
     public static final String ERA = "era:";
+    public static final String ORIGINAL_ERA = "original era:";
     public static final String SOURCE = "source:";
+    public static final String PUBLISHED = "published:";
     public static final String RULES_LEVEL = "rules level:";
     public static final String HEAT_SINKS = "heat sinks:";
     public static final String BASE_CHASSIS_HEAT_SINKS = "base chassis heat sinks:";
@@ -191,11 +189,17 @@ public class MtfFile implements IMekLoader {
     public static final String ARMORED = "(ARMORED)";
     public static final String OMNI_POD = "(OMNIPOD)";
     public static final String NO_CRIT = "nocrit:";
+    public static final String LOCATION_DONOR = "donor:";
+    public static final String LOCATION_DONOR_TYPE = "donor type:";
     public static final String SIZE = ":SIZE:";
+    public static final String UUID = "uuid:";
+    public static final String REFIT_FROM_UUID = "refitfromuuid:";
     public static final String MUL_ID = "mul id:";
     public static final String QUIRK = "quirk:";
     public static final String WEAPON_QUIRK = "weaponquirk:";
     public static final String ROLE = "role:";
+    public static final String AVAILABILITY = "availability:";
+    public static final String MISSION_ROLES = "missionroles:";
     public static final String FACTION = "faction:";
     public static final String CLAN_CASE_OPT_OUT = "clancaseoptedoutlocs:";
     public static final String FLUFF_IMAGE = "fluffimage:";
@@ -321,13 +325,31 @@ public class MtfFile implements IMekLoader {
             mek.setChassis(chassis.trim());
             mek.setClanChassisName(clanChassisName);
             mek.setModel(model.trim());
+            if (!StringUtility.isNullOrBlank(unitFileUUID)) {
+                mek.setUnitFileUUID(unitFileUUID);
+            }
+            mek.setRefitFromUUID(refitFromUUID);
+            mek.storeOriginalUnitData();
             mek.setMulId(mulId);
-            mek.setYear(Integer.parseInt(techYear.substring(4).trim()));
-            mek.setSource(source.substring("Source:".length()).trim());
+            mek.setYear(Integer.parseInt(techYear.substring(ERA.length()).trim()));
+            String originalYearStr = originalTechYear.substring(ORIGINAL_ERA.length()).trim();
+            if (!originalYearStr.isBlank()) {
+                int originalYear = Integer.parseInt(originalYearStr);
+                if (originalYear>0) {
+                    mek.setOriginalBuildYear(originalYear);
+                }
+            }
+            mek.setSource(source.substring(SOURCE.length()).trim());
+            mek.setPublished(published.substring(PUBLISHED.length()).trim());
             if (StringUtility.isNullOrBlank(role)) {
                 mek.setUnitRole(UnitRole.UNDETERMINED);
             } else {
                 mek.setUnitRole(UnitRole.parseRole(role));
+            }
+            mek.setForceGeneratorAvailability(
+                  ForceGeneratorAvailability.parseAll(availabilityLines, mek.getShortNameRaw()));
+            if (!StringUtility.isNullOrBlank(missionRoles)) {
+                mek.setMissionRoles(missionRoles);
             }
             if (!StringUtility.isNullOrBlank(faction)) {
                 mek.setTechFaction(Faction.fromAbbr(faction));
@@ -337,6 +359,7 @@ public class MtfFile implements IMekLoader {
                 mek.setOmni(true);
             }
             setTechLevel(mek);
+            boolean chassisIsFrankenMek = chassisConfig.contains("FrankenMek");
             mek.setWeight(Integer.parseInt(tonnage.substring(5)));
 
             int engineFlags = 0;
@@ -361,17 +384,36 @@ public class MtfFile implements IMekLoader {
             int baseHeatSinks = Integer
                   .parseInt(baseChassisHeatSinks.substring("base chassis heat sinks:".length()).trim());
 
-            String thisStructureType = internalType.substring(internalType.indexOf(':') + 1);
-            if (!thisStructureType.isBlank()) {
-                mek.setStructureType(thisStructureType);
+            String thisStructureType = internalType.substring(internalType.indexOf(':') + 1).trim();
+            if (!thisStructureType.isBlank()
+                  && !thisStructureType.equalsIgnoreCase(Mek.FRANKEN_MEK_STRUCTURE_HYBRID)) {
+                StructureType structure = EquipmentType.getStructureFromName(thisStructureType);
+                if (!mek.isMixedTech() && (structure != null)
+                      && (structure.getTechAdvancement().getTechBase() == TechBase.ALL)) {
+                    mek.setStructureType(EquipmentType.getStructureType(structure));
+                } else {
+                    mek.setStructureType(thisStructureType);
+                }
             } else {
                 mek.setStructureType(EquipmentType.T_STRUCTURE_STANDARD);
             }
+            if (chassisIsFrankenMek) {
+                mek.setFrankenMek(true);
+            }
             mek.autoSetInternal();
+            if (mek.isFrankenMek()) {
+                parseFrankenMekStructure(mek, thisStructureType);
+                mek.applyFrankenMekInternalStructure();
+            }
 
             String thisArmorType = armorType.substring(armorType.indexOf(':') + 1);
             if (thisArmorType.indexOf('(') != -1) {
-                boolean clan = thisArmorType.toLowerCase().contains("clan");
+                String armorName = thisArmorType.substring(0, thisArmorType.indexOf('(')).trim();
+                ArmorType armor = EquipmentType.getArmorFromName(armorName);
+                boolean clan = (!mek.isMixedTech() && (armor != null)
+                      && (armor.getTechAdvancement().getTechBase() == TechBase.ALL))
+                      ? mek.isClan()
+                      : thisArmorType.toLowerCase().contains("clan");
                 if (clan) {
                     switch (Integer.parseInt(rulesLevel.substring(12).trim())) {
                         case 2:
@@ -412,7 +454,7 @@ public class MtfFile implements IMekLoader {
                                   "Unsupported tech level: " + rulesLevel.substring(12).trim());
                     }
                 }
-                thisArmorType = thisArmorType.substring(0, thisArmorType.indexOf('(')).trim();
+                thisArmorType = armorName;
                 mek.setArmorType(thisArmorType);
             } else if (!thisArmorType.equals(EquipmentType.getArmorTypeName(EquipmentType.T_ARMOR_PATCHWORK))) {
                 mek.setArmorTechLevel(mek.getTechLevel());
@@ -432,7 +474,8 @@ public class MtfFile implements IMekLoader {
                       locationOrder[x]);
                 if (thisArmorType.equals(EquipmentType.getArmorTypeName(EquipmentType.T_ARMOR_PATCHWORK))) {
                     String armorName = isClan(x);
-                    mek.setArmorType(EquipmentType.getArmorType(EquipmentType.get(armorName)), locationOrder[x]);
+                    ArmorType armor = EquipmentType.getArmorFromName(armorName);
+                    mek.setArmorType(armor == null ? EquipmentType.T_ARMOR_UNKNOWN : armor.getArmorType(), locationOrder[x]);
 
                     String armorValue = armorValues[x].toLowerCase();
                     if (armorValue.contains("clan")) {
@@ -503,12 +546,20 @@ public class MtfFile implements IMekLoader {
                 parseNoCritEquipment(mek, equipment);
             }
 
+            if (mek.isFrankenMek()) {
+                for (Map.Entry<Integer, String> entry : frankenMekLocationSources.entrySet()) {
+                    mek.linkFrankenMekLocationToSource(entry.getKey(), entry.getValue(),
+                          frankenMekLocationSourceTypes.get(entry.getKey()));
+                }
+            }
+
             if (mek instanceof LandAirMek) {
                 // Set capital fighter stats for LAMs
                 ((LandAirMek) mek).autoSetCapArmor();
                 ((LandAirMek) mek).autoSetFatalThresh();
-                int fuelTankCount = (int) mek.getEquipment().stream()
-                      .filter(e -> e.is(EquipmentTypeLookup.LAM_FUEL_TANK)).count();
+                    int fuelTankCount = (int) mek.getMisc().stream()
+                        .filter(e -> e.getType().hasFlag(MiscType.F_LAM_FUEL_TANK))
+                        .count();
                 ((LandAirMek) mek).setFuel(80 * (1 + fuelTankCount));
             }
 
@@ -610,6 +661,57 @@ public class MtfFile implements IMekLoader {
         return armorName;
     }
 
+    private void parseFrankenMekStructure(Mek mek, String defaultStructureType) throws EntityLoadingException {
+        mek.initializeFrankenMekStructure();
+        boolean hybridStructure = defaultStructureType.trim().equalsIgnoreCase(Mek.FRANKEN_MEK_STRUCTURE_HYBRID);
+        for (Map.Entry<Integer, String> entry : frankenMekStructureValues.entrySet()) {
+            String structureValue = entry.getValue().substring(entry.getValue().indexOf(':') + 1).trim();
+            if (structureValue.isBlank()) {
+                continue;
+            }
+            if (hybridStructure || structureValue.contains(":")) {
+                int splitIndex = structureValue.lastIndexOf(':');
+                if (splitIndex < 0) {
+                    continue;
+                }
+                EquipmentType structure = getStructureEquipment(mek, structureValue.substring(0, splitIndex).trim());
+                mek.setFrankenMekStructureType(entry.getKey(), structure);
+                mek.setFrankenMekStructureTonnage(entry.getKey(), parseFrankenMekStructureTonnage(
+                      mek, entry.getKey(), structureValue.substring(splitIndex + 1).trim()));
+            } else {
+                mek.setFrankenMekStructureTonnage(entry.getKey(),
+                      parseFrankenMekStructureTonnage(mek, entry.getKey(), structureValue));
+            }
+        }
+    }
+
+    private int parseFrankenMekStructureTonnage(Mek mek, int location, String tonnageValue)
+          throws EntityLoadingException {
+        try {
+            return Integer.parseInt(tonnageValue);
+        } catch (NumberFormatException ex) {
+            throw new EntityLoadingException(
+                  "Invalid FrankenMek structure tonnage for " + mek.getLocationAbbr(location) + ": "
+                        + tonnageValue,
+                  ex);
+        }
+    }
+
+    private EquipmentType getStructureEquipment(Mek mek, String structureName) throws EntityLoadingException {
+        String lookupName = structureName;
+        if (!(lookupName.startsWith("Clan ") || lookupName.startsWith("IS "))) {
+            lookupName = (mek.isClan() ? "Clan " : "IS ") + lookupName;
+        }
+        if (!lookupName.endsWith("Structure")) {
+            lookupName += " Structure";
+        }
+        EquipmentType structure = EquipmentType.getStructureFromName(lookupName);
+        if (structure == null) {
+            throw new EntityLoadingException("Unknown structure type: " + structureName);
+        }
+        return structure;
+    }
+
     private String readLineIgnoringComments(BufferedReader reader) throws IOException {
         while (true) {
             String line = reader.readLine();
@@ -668,6 +770,24 @@ public class MtfFile implements IMekLoader {
             if (isValidLocation(line)) {
                 loc = getLocation(line);
                 slot = 0;
+                continue;
+            }
+
+            if ((loc >= 0) && (loc < critData.length) && line.toLowerCase().startsWith(LOCATION_DONOR)) {
+                frankenMekLocationSources.put(loc, line.substring(LOCATION_DONOR.length()).trim());
+                continue;
+            }
+
+            if ((loc >= 0) && (loc < critData.length)
+                  && line.toLowerCase().startsWith(LOCATION_DONOR_TYPE)) {
+                frankenMekLocationSourceTypes.put(loc,
+                      line.substring(LOCATION_DONOR_TYPE.length()).trim());
+                continue;
+            }
+
+            int structureLocation = getStructureLocation(line);
+            if (structureLocation >= 0) {
+                frankenMekStructureValues.put(structureLocation, line);
                 continue;
             }
 
@@ -784,7 +904,7 @@ public class MtfFile implements IMekLoader {
     }
 
     private void parseCrits(Mek mek, int loc) throws EntityLoadingException {
-        // check for removed arm actuators
+        // check for removed actuators
         if (!(mek instanceof QuadMek)) {
             if ((loc == Mek.LOC_LEFT_ARM) || (loc == Mek.LOC_RIGHT_ARM)) {
                 String toCheck = critData[loc][3].toUpperCase().trim();
@@ -802,6 +922,12 @@ public class MtfFile implements IMekLoader {
                     mek.setCritical(loc, 2, null);
                 }
             }
+        }
+        if (mek.isFrankenMek() && mek.locationIsLeg(loc)) {
+            clearSystemCriticalIfAbsent(mek, loc, 0, "Hip");
+            clearSystemCriticalIfAbsent(mek, loc, 1, "Upper Leg Actuator");
+            clearSystemCriticalIfAbsent(mek, loc, 2, "Lower Leg Actuator");
+            clearSystemCriticalIfAbsent(mek, loc, 3, "Foot Actuator");
         }
 
         // go through file, add weapons
@@ -866,7 +992,7 @@ public class MtfFile implements IMekLoader {
                       new CriticalSlot(CriticalSlot.TYPE_SYSTEM, LandAirMek.LAM_AVIONICS, true, isArmored));
                 continue;
             }
-            // if the slot's full already, skip it.
+            // If the slot's full already, skip it.
             if (mek.getCritical(loc, i) != null) {
                 continue;
             }
@@ -913,18 +1039,12 @@ public class MtfFile implements IMekLoader {
             EquipmentType etype2 = null;
             if (critName.contains("|")) {
                 String critName2 = critName.substring(critName.indexOf("|") + 1);
-                etype2 = EquipmentType.get(critName2);
-                if (etype2 == null) {
-                    etype2 = EquipmentType.get(mek.isClan() ? "Clan " + critName2 : "IS " + critName2);
-                }
+                etype2 = getEquipmentType(mek, critName2);
                 critName = critName.substring(0, critName.indexOf("|"));
             }
 
             try {
-                EquipmentType etype = EquipmentType.get(critName);
-                if (etype == null) {
-                    etype = EquipmentType.get(mek.isClan() ? "Clan " + critName : "IS " + critName);
-                }
+                EquipmentType etype = getEquipmentType(mek, critName);
                 if (etype != null) {
                     if (etype.isSpreadable()) {
                         // do we already have one of these? Key on Type
@@ -1079,6 +1199,20 @@ public class MtfFile implements IMekLoader {
             } catch (LocationFullException ex) {
                 throw new EntityLoadingException(ex.getMessage());
             }
+        }
+    }
+
+    private EquipmentType getEquipmentType(Mek mek, String equipmentName) {
+        return EquipmentType.get(equipmentName, mek.isMixedTech() ? null : mek.getTechBase());
+    }
+
+    private void clearSystemCriticalIfAbsent(Mek mek, int loc, int slot, String expectedCritical) {
+        String toCheck = critData[loc][slot].toUpperCase().trim();
+        if (toCheck.endsWith(ARMORED)) {
+            toCheck = toCheck.substring(0, toCheck.length() - ARMORED.length()).trim();
+        }
+        if (!toCheck.equalsIgnoreCase(expectedCritical)) {
+            mek.setCritical(loc, slot, null);
         }
     }
 
@@ -1246,7 +1380,7 @@ public class MtfFile implements IMekLoader {
             int entryIdx = 0;
             for (int i = 0; i < numSlots; i++) {
                 CriticalSlot slot = mek.getCritical(loc, i);
-                if (slot != null && isRelocatedSystemSlot(slot)) {
+                if (isRelocatedSystemSlot(slot)) {
                     critData[loc][i] = EMPTY;
                 } else if (entryIdx < nonSystemEntries.size()) {
                     critData[loc][i] = nonSystemEntries.get(entryIdx++);
@@ -1318,6 +1452,7 @@ public class MtfFile implements IMekLoader {
      * first empty slot available in a location. This means that any "holes" (empty slots not at the end of a location),
      * will cause the file crits and MegaMek's crits to become out of sync.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     private void compactCriticalSlots(Mek mek) {
         for (int loc = 0; loc < mek.locations(); loc++) {
             compactCriticalSlots(mek, loc);
@@ -1440,6 +1575,30 @@ public class MtfFile implements IMekLoader {
         return loc;
     }
 
+    private int getStructureLocation(String location) {
+        String locationName = location.toLowerCase();
+        if (locationName.startsWith("la structure:") || locationName.startsWith("fll structure:")) {
+            return Mek.LOC_LEFT_ARM;
+        } else if (locationName.startsWith("ra structure:") || locationName.startsWith("frl structure:")) {
+            return Mek.LOC_RIGHT_ARM;
+        } else if (locationName.startsWith("lt structure:")) {
+            return Mek.LOC_LEFT_TORSO;
+        } else if (locationName.startsWith("rt structure:")) {
+            return Mek.LOC_RIGHT_TORSO;
+        } else if (locationName.startsWith("ct structure:")) {
+            return Mek.LOC_CENTER_TORSO;
+        } else if (locationName.startsWith("hd structure:")) {
+            return Mek.LOC_HEAD;
+        } else if (locationName.startsWith("ll structure:") || locationName.startsWith("rll structure:")) {
+            return Mek.LOC_LEFT_LEG;
+        } else if (locationName.startsWith("rl structure:") || locationName.startsWith("rrl structure:")) {
+            return Mek.LOC_RIGHT_LEG;
+        } else if (locationName.startsWith("cl structure:")) {
+            return Mek.LOC_CENTER_LEG;
+        }
+        return -1;
+    }
+
     private boolean isValidLocation(String location) {
         return location.equalsIgnoreCase("Left Arm:")
               || location.equalsIgnoreCase("Right Arm:")
@@ -1498,6 +1657,7 @@ public class MtfFile implements IMekLoader {
             return true;
         }
 
+
         if (lineLower.startsWith(MYOMER)) {
             return true;
         }
@@ -1522,10 +1682,22 @@ public class MtfFile implements IMekLoader {
             return true;
         }
 
+        if (lineLower.startsWith(ORIGINAL_ERA)) {
+            originalTechYear = line;
+            return true;
+        }
+
         if (lineLower.startsWith(SOURCE)) {
             source = line;
             return true;
         }
+
+        if (lineLower.startsWith(PUBLISHED)) {
+            published = line;
+            return true;
+        }
+
+
 
         if (lineLower.startsWith(RULES_LEVEL)) {
             rulesLevel = line;
@@ -1599,7 +1771,7 @@ public class MtfFile implements IMekLoader {
             String[] fields = line.split(":");
             if (fields.length > 2) {
                 System system = System.parse(fields[1]);
-                if (null != system) {
+                if (system != null) {
                     systemManufacturers.put(system, fields[2].trim());
                 }
             }
@@ -1610,7 +1782,7 @@ public class MtfFile implements IMekLoader {
             String[] fields = line.split(":");
             if (fields.length > 2) {
                 System system = System.parse(fields[1]);
-                if (null != system) {
+                if (system != null) {
                     systemModels.put(system, fields[2].trim());
                 }
             }
@@ -1629,6 +1801,16 @@ public class MtfFile implements IMekLoader {
 
         if (lineLower.startsWith(BV)) {
             bv = Integer.parseInt(line.substring(BV.length()));
+            return true;
+        }
+
+        if (lineLower.startsWith(UUID)) {
+            unitFileUUID = line.substring(UUID.length()).trim();
+            return true;
+        }
+
+        if (lineLower.startsWith(REFIT_FROM_UUID)) {
+            refitFromUUID = line.substring(REFIT_FROM_UUID.length()).trim();
             return true;
         }
 
@@ -1654,6 +1836,16 @@ public class MtfFile implements IMekLoader {
 
         if (lineLower.startsWith(ROLE)) {
             role = line.substring(ROLE.length());
+            return true;
+        }
+
+        if (lineLower.startsWith(AVAILABILITY)) {
+            availabilityLines.add(line.substring(AVAILABILITY.length()).trim());
+            return true;
+        }
+
+        if (lineLower.startsWith(MISSION_ROLES)) {
+            missionRoles = line.substring(MISSION_ROLES.length()).trim();
             return true;
         }
 

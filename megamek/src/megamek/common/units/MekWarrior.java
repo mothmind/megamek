@@ -1,6 +1,6 @@
 /*
   Copyright (C) 2004 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2004-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2004-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -85,6 +85,7 @@ public class MekWarrior extends EjectedCrew {
     /**
      * @return the <code>int</code> external id of the unit that picked up this MW
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getPickedUpByExternalId() {
         return Integer.parseInt(pickedUpByExternalId);
     }
@@ -119,7 +120,8 @@ public class MekWarrior extends EjectedCrew {
     }
 
     @Override
-    public int doBattleValueCalculation(boolean ignoreC3, boolean ignoreSkill, CalculationReport calculationReport) {
+    public int doBattleValueCalculation(boolean ignoreC3, boolean ignoreSkill, boolean ignoreTAG,
+          CalculationReport calculationReport) {
         return 0;
     }
 

@@ -38,6 +38,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+
 import megamek.common.enums.TechRating;
 import megamek.common.equipment.ArmorType;
 import megamek.common.equipment.Engine;
@@ -55,11 +60,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Stream;
 
 class TestSupportVehicleTest {
 
@@ -187,7 +187,13 @@ class TestSupportVehicleTest {
             for (TechRating rating : List.of(TechRating.D, TechRating.E, TechRating.F)) {
                 tanks.add(
                       createValidSupportTank(
-                            mode, 50.0, "BAR 9 Armor", rating, 5.0, 250, rating.equals(TechRating.D) || rating.equals(TechRating.E)
+                            mode,
+                            50.0,
+                            "BAR 9 Armor",
+                            rating,
+                            5.0,
+                            250,
+                            rating.equals(TechRating.D) || rating.equals(TechRating.E)
                       )
                 );
             }
@@ -281,7 +287,7 @@ class TestSupportVehicleTest {
         return list.stream().map(t -> Arguments.of(Named.of(
               String.format("%.1f ton %s vee with TL %s BAR %s (%sA.C.)", t.getWeight(),
                     t.getMovementModeAsString(), t.getArmorTechRating().toString(),
-                    t.getBARRating(0), (t.hasArmoredChassis() ? "*": "no ")), t))
+                    t.getBARRating(0), (t.hasArmoredChassis() ? "*" : "no ")), t))
         );
     }
 
@@ -290,7 +296,7 @@ class TestSupportVehicleTest {
         return list.stream().map(t -> Arguments.of(Named.of(
               String.format("%.1f ton %s vee with TL %s BAR %s (%sA.C.)", t.getWeight(),
                     t.getMovementModeAsString(), t.getArmorTechRating().toString(),
-                    t.getBARRating(0), (t.hasArmoredChassis() ? "*": "no ")), t))
+                    t.getBARRating(0), (t.hasArmoredChassis() ? "*" : "no ")), t))
         );
     }
 
@@ -322,18 +328,15 @@ class TestSupportVehicleTest {
 
     /**
      * Test for GitHub issue #7350: Support Vehicle Engine Weight Rounding
-     *
-     * Per TM p.133, support vehicle engine weight should round to the nearest half-ton
-     * (for vehicles 5+ tons) or nearest kg (for small SVs), not round UP.
-     *
-     * Test case: 5-ton WiGE with 5/8 movement, ICE engine, tech rating D
-     * - baseEngineValue = 0.005 (WiGE, 5+ tons)
-     * - movementFactor = 4 + 5*5 = 29
-     * - engineWeightMultiplier = 1.5 (ICE at tech rating D)
-     * - raw weight = 0.005 * 29 * 1.5 * 5 = 1.0875 tons
-     *
-     * Expected: 1.0 ton (nearest half-ton)
-     * Bug behavior: 1.5 tons (ceiling to next half-ton)
+     * <p>
+     * Per TM p.133, support vehicle engine weight should round to the nearest half-ton (for vehicles 5+ tons) or
+     * nearest kg (for small SVs), not round UP.
+     * <p>
+     * Test case: 5-ton WiGE with 5/8 movement, ICE engine, tech rating D - baseEngineValue = 0.005 (WiGE, 5+ tons) -
+     * movementFactor = 4 + 5*5 = 29 - engineWeightMultiplier = 1.5 (ICE at tech rating D) - raw weight = 0.005 * 29 *
+     * 1.5 * 5 = 1.0875 tons
+     * <p>
+     * Expected: 1.0 ton (nearest half-ton) Bug behavior: 1.5 tons (ceiling to next half-ton)
      */
     @Test
     @DisplayName("Issue #7350: SV engine weight rounds to nearest half-ton, not ceiling")
@@ -371,4 +374,20 @@ class TestSupportVehicleTest {
         assertEquals(1.5, RoundWeight.NEXT_HALF_TON.round(expectedRawWeight, wige), 0.0001,
               "NEXT_HALF_TON (ceiling) would incorrectly give 1.5 tons");
     }
+
+      @Test
+      @DisplayName("Support engine ratings are derived from unit mass and movement")
+      void testSupportVehicleEngineRatingIsDerivedFromUnit() {
+            SupportTank supportTank = new SupportTank();
+            supportTank.setWeight(20.0);
+            supportTank.setOriginalWalkMP(5);
+            Engine engine = new Engine(0, Engine.COMBUSTION_ENGINE, Engine.SUPPORT_VEE_ENGINE);
+            supportTank.setEngine(engine);
+
+            assertEquals(0, engine.getRating());
+            assertEquals(100.0, engine.getRating(supportTank));
+
+            MiscType masc = MiscType.createISMASC();
+            assertEquals(100_000.0, masc.getCost(supportTank, false, SupportTank.LOC_BODY, 0), 0.0001);
+      }
 }

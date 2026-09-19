@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2005 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2008-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2008-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -102,7 +102,9 @@ public class ManeuverType {
             case MAN_IMMELMAN:
                 return (velocity >= 3) && (altitude < 9);
             case MAN_SPLIT_S:
-                return (altitude + 2) > ceiling;
+                // Loses two altitudes (TW p.85), so there must be room below: the unit has to end
+                // strictly above the terrain ceiling (0 on ground maps, where altitude 0 is the ground)
+                return (altitude - 2) > ceiling;
             case MAN_BARREL_ROLL:
                 return velocity >= 2;
             case MAN_SIDE_SLIP_LEFT:
@@ -171,23 +173,25 @@ public class ManeuverType {
     }
 
     /**
-     * Generates an HTML-formatted tooltip for the specified maneuver type showing requirements,
-     * thrust cost, control modifier, and effect. Uses localized strings from messages.properties.
+     * Generates an HTML-formatted tooltip for the specified maneuver type showing requirements, thrust cost, control
+     * modifier, and effect. Uses localized strings from messages.properties.
      *
      * @param type       The maneuver type constant from ManeuverType
      * @param canPerform Whether the maneuver can currently be performed
      * @param velocity   Current unit velocity
      * @param altitude   Current unit altitude
+     * @param ceiling    Terrain ceiling altitude below the unit (0 on ground maps)
      * @param isVSTOL_CF Whether the entity is a VSTOL with Improved Avionics
+     *
      * @return HTML-formatted tooltip string
      */
     public static String getManeuverTooltip(int type, boolean canPerform, int velocity, int altitude,
-                                            boolean isVSTOL_CF) {
+          int ceiling, boolean isVSTOL_CF) {
         StringBuilder tooltip = new StringBuilder("<HTML><BODY>");
 
         // Maneuver name header
         tooltip.append(UIUtil.fontHTML(UIUtil.uiLightViolet()))
-               .append("<B>").append(getTypeName(type)).append("</B></FONT><BR>");
+              .append("<B>").append(getTypeName(type)).append("</B></FONT><BR>");
 
         // Get the maneuver name for resource key
         String maneuverKey = getManeuverResourceKey(type);
@@ -210,26 +214,32 @@ public class ManeuverType {
                 case MAN_LOOP:
                     if (velocity < 4) {
                         tooltip.append(" ").append(MessageFormat.format(
-                            Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
+                              Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
                     }
                     break;
                 case MAN_IMMELMAN:
                     if ((velocity < 3) || (altitude >= 9)) {
                         tooltip.append(" ").append(MessageFormat.format(
-                            Messages.getString("ManeuverChoiceDialog.currentValues"), velocity, altitude));
+                              Messages.getString("ManeuverChoiceDialog.currentValues"), velocity, altitude));
+                    }
+                    break;
+                case MAN_SPLIT_S:
+                    if ((altitude - 2) <= ceiling) {
+                        tooltip.append(" ").append(MessageFormat.format(
+                              Messages.getString("ManeuverChoiceDialog.currentAltitude"), altitude));
                     }
                     break;
                 case MAN_BARREL_ROLL:
                     if (velocity < 2) {
                         tooltip.append(" ").append(MessageFormat.format(
-                            Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
+                              Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
                     }
                     break;
                 case MAN_SIDE_SLIP_LEFT:
                 case MAN_SIDE_SLIP_RIGHT:
                     if (velocity <= 0) {
                         tooltip.append(" ").append(MessageFormat.format(
-                            Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
+                              Messages.getString("ManeuverChoiceDialog.currentValue"), velocity));
                     }
                     break;
                 case MAN_VIFF:
@@ -275,11 +285,11 @@ public class ManeuverType {
      * Gets the resource key suffix for a maneuver type for use in loading localized strings.
      *
      * @param type The maneuver type constant
+     *
      * @return The resource key suffix (e.g., "Loop", "Immelman", "SplitS")
      */
     private static String getManeuverResourceKey(int type) {
         return switch (type) {
-            case MAN_NONE -> "None";
             case MAN_LOOP -> "Loop";
             case MAN_IMMELMAN -> "Immelman";
             case MAN_SPLIT_S -> "SplitS";

@@ -32,15 +32,7 @@
  */
 package megamek.client.ui.clientGUI.boardview;
 
-import java.awt.BasicStroke;
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.Stroke;
+import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
@@ -62,6 +54,7 @@ import megamek.client.ui.Messages;
 import megamek.client.ui.clientGUI.boardview.LOSDiagramData.HexRow;
 import megamek.client.ui.util.UIUtil;
 import megamek.common.Configuration;
+import megamek.common.LosEffects;
 
 /**
  * A panel that renders a 2D elevation cross-section diagram for a LOS path. Shows ground elevation, terrain features,
@@ -84,6 +77,9 @@ class LOSElevationDiagramPanel extends JPanel {
     private static final int LEVEL_PADDING = 2;
     private static final int MAX_DISPLAY_RANGE = 40;
 
+    /** Point size (before GUI scaling) of the elevation axis level labels. */
+    private static final float AXIS_LABEL_FONT_SIZE = 10.0f;
+
 
     private static final Color COLOR_GROUND = new Color(139, 119, 101);
     private static final Color COLOR_GROUND_OUTLINE = new Color(100, 80, 60);
@@ -104,6 +100,8 @@ class LOSElevationDiagramPanel extends JPanel {
     private static final Color COLOR_FIRE = new Color(255, 50, 0, 210);
     private static final Color COLOR_SCREEN = new Color(180, 180, 255, 120);
     private static final Color COLOR_FIELDS = new Color(200, 180, 50, 100);
+    private static final Color COLOR_GEYSER_JET = new Color(150, 200, 235, 175);
+    private static final Color COLOR_GEYSER_SPRAY = new Color(215, 238, 250, 160);
     private static final Color COLOR_LOS_CLEAR = new Color(60, 220, 60);
     private static final Color COLOR_LOS_BLOCKED = new Color(240, 50, 50);
     private static final Color COLOR_SPLIT_MARKER = new Color(255, 165, 0, 120);
@@ -115,9 +113,17 @@ class LOSElevationDiagramPanel extends JPanel {
           2.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, LOS_DASH_PATTERN, 0.0f);
     private static final Stroke STROKE_GRID = new BasicStroke(0.5f);
     private static final Stroke STROKE_DEFAULT = new BasicStroke(1.0f);
+    private static final Stroke STROKE_BLOCKER_OUTLINE = new BasicStroke(2.5f);
     private static final float[] DASH_PATTERN = { 6.0f, 4.0f };
     private static final Stroke STROKE_SPLIT = new BasicStroke(
           1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10.0f, DASH_PATTERN, 0.0f);
+
+    /** Dotted stroke for the VTOL Mast Mount "antenna" between the unit top and its +1 sensor eye marker. */
+    private static final Stroke STROKE_MAST_MOUNT = new BasicStroke(
+          1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10.0f, new float[] { 2.0f, 2.0f }, 0.0f);
+
+    /** Half-size of the Mast Mount "+1 spotting eye" diamond marker, in unscaled pixels. */
+    private static final int MAST_MOUNT_EYE_RADIUS = 5;
 
     /** Width of the unit silhouette as a fraction of the hex column width. */
     private static final float SILHOUETTE_WIDTH_FACTOR = 0.7f;
@@ -139,6 +145,15 @@ class LOSElevationDiagramPanel extends JPanel {
 
     /** Aspect ratio (height/width) for the larger crown puffs at the plume top. */
     private static final double SMOKE_CROWN_ASPECT_RATIO = 0.65;
+
+    /**
+     * Erupting-geyser plume height in TW levels; treated as ultra-heavy woods for LOS (TacOps). Derived from the LOS
+     * engine's {@link LosEffects#GEYSER_PLUME_HEIGHT} so the diagram cannot drift out of sync with the rule.
+     */
+    private static final int GEYSER_PLUME_LEVELS = LosEffects.GEYSER_PLUME_HEIGHT;
+
+    /** Width of the geyser water jet as a fraction of the column width. */
+    private static final double GEYSER_JET_WIDTH_FACTOR = 0.28;
 
     private static final String LOS_SILHOUETTE_DIR = "units" + File.separator + "LOS" + File.separator;
 
@@ -236,9 +251,13 @@ class LOSElevationDiagramPanel extends JPanel {
         }
 
         int scaledMinHexWidth = UIUtil.scaleForGUI(MIN_HEX_WIDTH);
-        int scaledLeftMargin = UIUtil.scaleForGUI(LEFT_MARGIN);
         int scaledRightMargin = UIUtil.scaleForGUI(RIGHT_MARGIN);
         int hexCount = diagramData.hexPath().size();
+
+        // Match the dynamic left gutter the renderer uses, so a gutter widened for tall/negative labels
+        // doesn't push content past the preferred width and clip the right side inside the scroll pane.
+        LevelRange range = computeLevelRange(diagramData.hexPath());
+        int scaledLeftMargin = computeLeftMargin(range.minLevel(), range.maxLevel());
         int neededWidth = scaledLeftMargin + (hexCount * scaledMinHexWidth) + scaledRightMargin;
 
         // Only set preferred width if content is wider than the parent would give us
@@ -295,21 +314,62 @@ class LOSElevationDiagramPanel extends JPanel {
     }
 
     /**
-     * Calculates rendering metrics (scale, offsets) for the current panel size and data.
+     * Returns the font metrics for the elevation axis level labels, used both to draw the labels and to size the
+     * left gutter so wide labels (negative or multi-digit levels) are not clipped.
+     */
+    private FontMetrics axisLabelFontMetrics() {
+        return getFontMetrics(getFont().deriveFont(UIUtil.scaleForGUI(AXIS_LABEL_FONT_SIZE)));
+    }
+
+    /** Vertical display range (in levels) and clip flags derived from the diagram data. */
+    private record LevelRange(int minLevel, int maxLevel, int actualMinLevel, int actualMaxLevel,
+          boolean clippedTop, boolean clippedBottom) { }
+
+    /**
+     * Calculates rendering metrics (scale, offsets) for the current panel size and data. The left gutter is widened
+     * when the level labels are wider than the default margin so they are not clipped at the left edge.
      */
     private DiagramMetrics calculateMetrics(List<HexRow> hexPath) {
-        int scaledLeftMargin = UIUtil.scaleForGUI(LEFT_MARGIN);
         int scaledRightMargin = UIUtil.scaleForGUI(RIGHT_MARGIN);
         int scaledTopMargin = UIUtil.scaleForGUI(TOP_MARGIN);
         int scaledBottomMargin = UIUtil.scaleForGUI(BOTTOM_MARGIN);
 
-        int drawAreaWidth = getWidth() - scaledLeftMargin - scaledRightMargin;
-        int drawAreaHeight = getHeight() - scaledTopMargin - scaledBottomMargin;
-
         int hexCount = hexPath.size();
         int scaledMinHexWidth = UIUtil.scaleForGUI(MIN_HEX_WIDTH);
+
+        LevelRange range = computeLevelRange(hexPath);
+        int minLevel = range.minLevel();
+        int maxLevel = range.maxLevel();
+
+        // Left gutter sized to the widest axis label so negative/multi-digit levels aren't clipped. The same
+        // value feeds updatePreferredWidth() so the scroll pane reserves enough width and the right side of
+        // the diagram is not clipped when the gutter grows.
+        int scaledLeftMargin = computeLeftMargin(minLevel, maxLevel);
+
+        int drawAreaWidth = getWidth() - scaledLeftMargin - scaledRightMargin;
+        int drawAreaHeight = getHeight() - scaledTopMargin - scaledBottomMargin;
         int hexColumnWidth = Math.max(scaledMinHexWidth, drawAreaWidth / Math.max(hexCount, 1));
 
+        int levelRange = Math.max(maxLevel - minLevel, 1);
+        double levelHeight = (double) drawAreaHeight / levelRange;
+
+        return new DiagramMetrics(
+              scaledLeftMargin, scaledTopMargin,
+              drawAreaWidth, drawAreaHeight,
+              hexColumnWidth, levelHeight,
+              minLevel, maxLevel, hexCount,
+              range.clippedTop(), range.clippedBottom(),
+              range.actualMinLevel(), range.actualMaxLevel(),
+              diagramData.attackerAtAltitude(), diagramData.targetAtAltitude()
+        );
+    }
+
+    /**
+     * Computes the vertical level range to display, capped at {@link #MAX_DISPLAY_RANGE} and centered on the ground
+     * units when the natural range is too large. Shared by {@link #calculateMetrics} (rendering) and
+     * {@link #updatePreferredWidth} (scroll sizing) so both agree on the range and the resulting gutter width.
+     */
+    private LevelRange computeLevelRange(List<HexRow> hexPath) {
         // Find elevation range across all hexes, units, and LOS line
         int minLevel = Integer.MAX_VALUE;
         int maxLevel = Integer.MIN_VALUE;
@@ -323,10 +383,8 @@ class LOSElevationDiagramPanel extends JPanel {
         // Include unit positions in the range. absHeight is the unit top (TW height).
         // Unit bottom = absHeight - TW height (accounts for elevation, e.g., VTOLs).
         // Airborne aero (altitude) units are excluded - they are drawn above the break line.
-        boolean attackerIsAltitude = diagramData.attackerUnitType().isAltitudeUnit()
-              && (diagramData.attackerAbsHeight() > maxLevel);
-        boolean targetIsAltitude = diagramData.targetUnitType().isAltitudeUnit()
-              && (diagramData.targetAbsHeight() > maxLevel);
+        boolean attackerIsAltitude = diagramData.attackerAtAltitude();
+        boolean targetIsAltitude = diagramData.targetAtAltitude();
 
         int attackerTwHeight = diagramData.attackerUnitType().twHeight()
               - (diagramData.attackerIsHullDown() ? 1 : 0);
@@ -372,12 +430,12 @@ class LOSElevationDiagramPanel extends JPanel {
                   attackerIsAltitude ? Integer.MAX_VALUE : attackerBottom,
                   targetIsAltitude ? Integer.MAX_VALUE : targetBottom);
 
-            if ((highestUnit != Integer.MIN_VALUE) && (highestUnit > cappedMax - LEVEL_PADDING)) {
+            if ((highestUnit > cappedMax - LEVEL_PADDING)) {
                 int shift = highestUnit - (cappedMax - LEVEL_PADDING);
                 cappedMax += shift;
                 cappedMin += shift;
             }
-            if ((lowestUnit != Integer.MAX_VALUE) && (lowestUnit < cappedMin + LEVEL_PADDING)) {
+            if ((lowestUnit < cappedMin + LEVEL_PADDING)) {
                 int shift = (cappedMin + LEVEL_PADDING) - lowestUnit;
                 cappedMin -= shift;
                 cappedMax -= shift;
@@ -394,18 +452,21 @@ class LOSElevationDiagramPanel extends JPanel {
             clippedTop = true;
         }
 
-        int levelRange = Math.max(maxLevel - minLevel, 1);
-        double levelHeight = (double) drawAreaHeight / levelRange;
+        return new LevelRange(minLevel, maxLevel, actualMinLevel, actualMaxLevel, clippedTop, clippedBottom);
+    }
 
-        return new DiagramMetrics(
-              scaledLeftMargin, scaledTopMargin,
-              drawAreaWidth, drawAreaHeight,
-              hexColumnWidth, levelHeight,
-              minLevel, maxLevel, hexCount,
-              clippedTop, clippedBottom,
-              actualMinLevel, actualMaxLevel,
-              attackerIsAltitude, targetIsAltitude
-        );
+    /**
+     * Returns the left gutter width, widened beyond {@link #LEFT_MARGIN} when the level labels (negative or
+     * multi-digit) would otherwise clip at the left edge. The labels are right-aligned into the gutter at
+     * (leftMargin - labelWidth - 4), so it must hold the widest label plus that offset. {@code minLevel}/
+     * {@code maxLevel} are a safe upper bound for the widest drawn label (the padding levels are not labeled).
+     */
+    private int computeLeftMargin(int minLevel, int maxLevel) {
+        FontMetrics axisFontMetrics = axisLabelFontMetrics();
+        int widestLabelWidth = Math.max(
+              axisFontMetrics.stringWidth(String.valueOf(minLevel)),
+              axisFontMetrics.stringWidth(String.valueOf(maxLevel)));
+        return Math.max(UIUtil.scaleForGUI(LEFT_MARGIN), widestLabelWidth + UIUtil.scaleForGUI(8));
     }
 
     /**
@@ -414,7 +475,7 @@ class LOSElevationDiagramPanel extends JPanel {
     private void drawGrid(Graphics2D g2d, DiagramMetrics metrics) {
         g2d.setStroke(STROKE_GRID);
         g2d.setColor(getGridColor());
-        Font labelFont = g2d.getFont().deriveFont(UIUtil.scaleForGUI(10.0f));
+        Font labelFont = g2d.getFont().deriveFont(UIUtil.scaleForGUI(AXIS_LABEL_FONT_SIZE));
         g2d.setFont(labelFont);
         FontMetrics fontMetrics = g2d.getFontMetrics();
 
@@ -567,7 +628,83 @@ class LOSElevationDiagramPanel extends JPanel {
                       columnWidth - 2, metrics.drawAreaHeight - 2);
                 g2d.setStroke(STROKE_DEFAULT);
             }
+
+            // Highlight the hex bar in red when this hex's solid terrain blocks LOS so the offender pops
+            // visually. Outline runs from the hex's effective top (ground + buildings) down to ground level.
+            if (hex.blocksLOS()) {
+                int blockerTopElevation = hex.groundElevation() + hex.buildingHeight();
+                int yBlockerTop = metrics.levelToY(blockerTopElevation);
+                int blockerHeight = yGround - yBlockerTop;
+                if (blockerHeight <= 0) {
+                    // No building above ground: outline the ground bar itself
+                    yBlockerTop = yGround;
+                    blockerHeight = Math.max(yBottom - yGround, 1);
+                }
+                g2d.setColor(COLOR_LOS_BLOCKED);
+                g2d.setStroke(STROKE_BLOCKER_OUTLINE);
+                g2d.drawRect(xLeft, yBlockerTop, columnWidth, blockerHeight);
+                g2d.setStroke(STROKE_DEFAULT);
+            }
+
+            // Mark the dead-zone victim hex with diagonal hatching across its ground bar so the player
+            // sees that the lower unit sits inside a TacOps dead-zone shadow. Only fires when the engine
+            // flagged the LOS as blocked by the dead-zone rule (Standard/BMM blocking uses the red outline
+            // above).
+            if (diagramData.deadZone() && hex.coords().equals(diagramData.deadZoneVictimPos())) {
+                drawDeadZoneHatch(g2d, xLeft, yGround, columnWidth, yBottom - yGround);
+            }
         }
+    }
+
+    /**
+     * Draws a {@code ///} pattern across the given rectangle in semi-opaque black, then a centered
+     * "Dead Zone" label on top so the marker is unambiguous. Used to mark a hex that sits inside a
+     * TacOps dead-zone shadow. Doesn't fill the air above the hex, so silhouettes and the LOS line
+     * stay readable.
+     */
+    private static void drawDeadZoneHatch(Graphics2D g2d, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        Shape oldClip = g2d.getClip();
+        Color oldColor = g2d.getColor();
+        Stroke oldStroke = g2d.getStroke();
+        Font oldFont = g2d.getFont();
+        g2d.setClip(x, y, width, height);
+        g2d.setColor(new Color(0, 0, 0, 180));
+        g2d.setStroke(new BasicStroke(2.0f));
+        int spacing = UIUtil.scaleForGUI(8);
+        // Each line goes from (x + offset - height) at the bottom to (x + offset) at the top, creating
+        // a 45-degree slash that fully covers the rectangle when offsets march from -height to width.
+        for (int offset = -height; offset < width + height; offset += spacing) {
+            g2d.drawLine(x + offset, y + height, x + offset + height, y);
+        }
+
+        // Centered label. Falls back to a short form if the hex column is too narrow for the full text.
+        Font labelFont = oldFont.deriveFont(Font.BOLD, UIUtil.scaleForGUI(10.0f));
+        g2d.setFont(labelFont);
+        FontMetrics fm = g2d.getFontMetrics();
+        String label = Messages.getString("Ruler.deadZoneLabel");
+        int labelWidth = fm.stringWidth(label);
+        if (labelWidth > width - 4) {
+            label = Messages.getString("Ruler.deadZoneLabelShort");
+            labelWidth = fm.stringWidth(label);
+        }
+        int textX = x + (width - labelWidth) / 2;
+        int textY = y + (height + fm.getAscent()) / 2 - fm.getDescent();
+        // White text with a thin black halo for contrast against the brown ground + black slashes.
+        g2d.setColor(Color.BLACK);
+        g2d.drawString(label, textX - 1, textY);
+        g2d.drawString(label, textX + 1, textY);
+        g2d.drawString(label, textX, textY - 1);
+        g2d.drawString(label, textX, textY + 1);
+        g2d.setColor(Color.WHITE);
+        g2d.drawString(label, textX, textY);
+
+        g2d.setFont(oldFont);
+        g2d.setStroke(oldStroke);
+        g2d.setColor(oldColor);
+        g2d.setClip(oldClip);
     }
 
     /**
@@ -589,17 +726,17 @@ class LOSElevationDiagramPanel extends JPanel {
     }
 
     /**
-     * Draws a tree silhouette profile. Woods get conical (evergreen) shapes, jungle gets
-     * rounded (broadleaf) shapes. Higher density draws more trees side by side.
+     * Draws a tree silhouette profile. Woods get conical (evergreen) shapes, jungle gets rounded (broadleaf) shapes.
+     * Higher density draws more trees side by side.
      *
-     * @param g2d       the graphics context
-     * @param color     the foliage color
-     * @param x         left edge of the drawing area
-     * @param y         top edge of the drawing area
-     * @param width     width of the drawing area
-     * @param height    height of the drawing area
-     * @param density   foliage density (1=light, 2=heavy, 3=ultra)
-     * @param isJungle  true for jungle (rounded canopy), false for woods (conical canopy)
+     * @param g2d      the graphics context
+     * @param color    the foliage color
+     * @param x        left edge of the drawing area
+     * @param y        top edge of the drawing area
+     * @param width    width of the drawing area
+     * @param height   height of the drawing area
+     * @param density  foliage density (1=light, 2=heavy, 3=ultra)
+     * @param isJungle true for jungle (rounded canopy), false for woods (conical canopy)
      */
     private void drawTreeSilhouette(Graphics2D g2d, Color color, int x, int y,
           int width, int height, int density, boolean isJungle) {
@@ -609,7 +746,6 @@ class LOSElevationDiagramPanel extends JPanel {
 
         int trunkHeight = Math.max(height / 5, 2);
         int canopyHeight = height - trunkHeight;
-        int canopyTop = y;
         int canopyBottom = y + canopyHeight;
 
         // Draw more trees for higher density
@@ -631,11 +767,11 @@ class LOSElevationDiagramPanel extends JPanel {
             g2d.setColor(color);
             if (isJungle) {
                 // Rounded canopy for jungle
-                g2d.fillOval(treeX + 1, canopyTop, treeWidth - 2, canopyHeight);
+                g2d.fillOval(treeX + 1, y, treeWidth - 2, canopyHeight);
             } else {
                 // Conical (triangular) canopy for woods/evergreen
                 int[] xPoints = { treeCenterX, treeX + 1, treeX + treeWidth - 1 };
-                int[] yPoints = { canopyTop, canopyBottom, canopyBottom };
+                int[] yPoints = { y, canopyBottom, canopyBottom };
                 g2d.fillPolygon(xPoints, yPoints, 3);
             }
         }
@@ -872,12 +1008,12 @@ class LOSElevationDiagramPanel extends JPanel {
                 double edgeFade = 1.0 - 0.4 * Math.abs(puffProgress - 0.5) * 2;
                 double topFade = progress > 0.85 ? 1.0 - (progress - 0.85) / 0.15 : 1.0;
                 int alpha = (int) (baseAlpha * edgeFade * topFade);
-                alpha = Math.max(15, Math.min(200, alpha));
+                alpha = Math.clamp(alpha, 15, 200);
 
                 // Color variation: lighter at top (rising smoke), darker at base
                 int grayShift = (int) (40 * progress);
                 int grayVar = ((hash + puff) % 3 - 1) * 12;
-                int gray = Math.max(0, Math.min(235, baseGray + grayShift + grayVar));
+                int gray = Math.clamp(baseGray + grayShift + grayVar, 0, 235);
 
                 g2d.setColor(new Color(gray, gray, gray, alpha));
                 g2d.fillOval(px, py, puffW, puffH);
@@ -899,6 +1035,61 @@ class LOSElevationDiagramPanel extends JPanel {
             int puffH = (int) (puffW * SMOKE_CROWN_ASPECT_RATIO);
             g2d.setColor(new Color(crownGray, crownGray, crownGray, crownAlpha));
             g2d.fillOval(px + jitterX, y - crownPuffSize / 3 + jitterY, puffW, puffH);
+        }
+    }
+
+    /**
+     * Draws an erupting geyser as a narrow vertical water jet topped by a fountain-like spray crown of droplets.
+     * Deliberately distinct from the wide billowing smoke plume: a thin, fast column of water shooting straight up with
+     * droplets arcing outward at the top.
+     *
+     * @param g2d    the graphics context
+     * @param x      the left edge of the hex column
+     * @param y      the top of the plume (three levels above ground)
+     * @param width  the hex column width
+     * @param height the pixel height of the three-level plume (ground to plume top)
+     */
+    private void drawGeyserJet(Graphics2D g2d, int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        int centerX = x + width / 2;
+        int jetWidth = Math.max((int) (width * GEYSER_JET_WIDTH_FACTOR), 3);
+
+        // Central rising water jet: a translucent column that tapers slightly toward the top.
+        int[] jetX = {
+              centerX - jetWidth / 2,
+              centerX + jetWidth / 2,
+              centerX + jetWidth / 4,
+              centerX - jetWidth / 4
+        };
+        int[] jetY = { y + height, y + height, y, y };
+        g2d.setColor(COLOR_GEYSER_JET);
+        g2d.fillPolygon(jetX, jetY, 4);
+
+        // Vertical streaks suggesting fast-moving water inside the jet.
+        g2d.setColor(COLOR_GEYSER_SPRAY);
+        g2d.setStroke(STROKE_DEFAULT);
+        for (int streak = 0; streak < 3; streak++) {
+            int streakX = centerX - jetWidth / 3 + streak * jetWidth / 3;
+            g2d.drawLine(streakX, y + height, streakX, y + height / 6);
+        }
+
+        // Spray crown: droplets arcing up and outward from the jet top like a fountain. The arc is a
+        // parabola - highest in the middle of the fan, tailing off toward the edges.
+        int dropSize = Math.max(jetWidth / 2, 3);
+        int fanWidth = width;
+        int drops = 9;
+        for (int drop = 0; drop < drops; drop++) {
+            double fan = (drop / (double) (drops - 1)) * 2.0 - 1.0; // -1.0 .. 1.0
+            int hash = (drop * 13 + 5) % 11;
+            int dropX = centerX + (int) (fan * fanWidth / 2.0);
+            int arc = (int) ((1.0 - fan * fan) * height * 0.5);
+            int dropY = y - arc + (hash % 3) * dropSize / 2;
+            int diameter = dropSize + (hash % 3);
+            g2d.setColor(COLOR_GEYSER_SPRAY);
+            g2d.fillOval(dropX - diameter / 2, dropY, diameter, diameter);
         }
     }
 
@@ -935,6 +1126,12 @@ class LOSElevationDiagramPanel extends JPanel {
         if (hex.hasFields()) {
             int yFieldsTop = metrics.levelToY(hex.groundElevation() + 1);
             drawFieldStalks(g2d, xLeft, yFieldsTop, columnWidth, yGround - yFieldsTop);
+        }
+
+        // Erupting geyser: a rising water/steam jet, three levels tall (ultra-heavy woods for LOS)
+        if (hex.eruptingGeyser()) {
+            int yGeyserTop = metrics.levelToY(hex.groundElevation() + GEYSER_PLUME_LEVELS);
+            drawGeyserJet(g2d, xLeft, yGeyserTop, columnWidth, yGround - yGeyserTop);
         }
     }
 
@@ -985,6 +1182,13 @@ class LOSElevationDiagramPanel extends JPanel {
                 drawCenteredLabel(g2d, fontMetrics, label, xCenter, barMidY, getLabelColor());
             }
 
+            // Erupting geyser label
+            if (hex.eruptingGeyser()) {
+                int yGeyserTop = metrics.levelToY(hex.groundElevation() + GEYSER_PLUME_LEVELS);
+                int barMidY = (yGeyserTop + yGround) / 2 + fontHeight / 2;
+                drawCenteredLabel(g2d, fontMetrics, "G", xCenter, barMidY, getLabelColor());
+            }
+
             // Water depth label
             if (hex.waterDepth() > 0) {
                 int yWaterFloor = metrics.levelToY(
@@ -1028,15 +1232,16 @@ class LOSElevationDiagramPanel extends JPanel {
             drawAltitudeUnitAboveBreak(g2d, metrics, 0, RulerDialog.color1,
                   diagramData.attackerUnitType(), diagramData.attackerAbsHeight(), true);
         } else {
-            int attackerTwHeight = diagramData.attackerUnitType().twHeight();
-            if (diagramData.attackerIsHullDown()) {
-                attackerTwHeight = Math.max(1, attackerTwHeight - 1);
-            }
             int attackerTop = diagramData.attackerAbsHeight();
-            int attackerBottom = attackerTop - attackerTwHeight;
+            int attackerBottom = computeUnitBottom(diagramData.attackerUnitType(),
+                  diagramData.attackerIsHullDown(), attackerTop,
+                  hexPath.getFirst().groundElevation());
             drawUnitSilhouette(g2d, metrics, 0, attackerBottom, attackerTop,
                   RulerDialog.color1,
                   diagramData.attackerUnitType(), true);
+            if (diagramData.attackerHasMastMount()) {
+                drawMastMountEye(g2d, metrics, 0, attackerTop, diagramData.attackerSpottingClear());
+            }
         }
 
         // Target silhouette
@@ -1044,16 +1249,53 @@ class LOSElevationDiagramPanel extends JPanel {
             drawAltitudeUnitAboveBreak(g2d, metrics, hexPath.size() - 1, RulerDialog.color2,
                   diagramData.targetUnitType(), diagramData.targetAbsHeight(), false);
         } else {
-            int targetTwHeight = diagramData.targetUnitType().twHeight();
-            if (diagramData.targetIsHullDown()) {
-                targetTwHeight = Math.max(1, targetTwHeight - 1);
-            }
             int targetTop = diagramData.targetAbsHeight();
-            int targetBottom = targetTop - targetTwHeight;
+            int targetBottom = computeUnitBottom(diagramData.targetUnitType(),
+                  diagramData.targetIsHullDown(), targetTop,
+                  hexPath.getLast().groundElevation());
             drawUnitSilhouette(g2d, metrics, hexPath.size() - 1, targetBottom, targetTop,
                   RulerDialog.color2,
                   diagramData.targetUnitType(), false);
+            if (diagramData.targetHasMastMount()) {
+                drawMastMountEye(g2d, metrics, hexPath.size() - 1, targetTop,
+                      diagramData.targetSpottingClear());
+            }
         }
+    }
+
+    /**
+     * Draws a VTOL Mast Mount "+1 spotting eye": a small diamond marker one level above the unit silhouette, joined
+     * to the unit top by a short dotted antenna. The Mast Mount raises onboard sensors by 1 level for spotting only
+     * (TacOps), so this marks the elevation the unit actually sees from when spotting. The marker is green when the
+     * unit has clear spotting LOS to the other endpoint from the raised eye, red when blocked. The direct-fire LOS
+     * line is drawn separately and is unaffected.
+     *
+     * @param hexIndex      the hex column the unit occupies
+     * @param unitTopLevel  the unit silhouette top elevation (its absolute height)
+     * @param spottingClear whether spotting LOS from the +1 eye to the other endpoint is clear
+     */
+    private void drawMastMountEye(Graphics2D g2d, DiagramMetrics metrics, int hexIndex,
+          int unitTopLevel, boolean spottingClear) {
+        int xCenter = metrics.leftMargin + (hexIndex * metrics.hexColumnWidth)
+              + (metrics.hexColumnWidth / 2);
+        int yUnitTop = metrics.levelToY(unitTopLevel);
+        int yEye = metrics.levelToY(unitTopLevel + 1);
+        Color eyeColor = spottingClear ? COLOR_LOS_CLEAR : COLOR_LOS_BLOCKED;
+
+        // Dotted antenna from the unit top up to the raised sensor eye.
+        Stroke oldStroke = g2d.getStroke();
+        g2d.setColor(eyeColor);
+        g2d.setStroke(STROKE_MAST_MOUNT);
+        g2d.drawLine(xCenter, yUnitTop, xCenter, yEye);
+        g2d.setStroke(oldStroke);
+
+        // Diamond marker at the +1 sensor eye elevation.
+        int half = Math.max(UIUtil.scaleForGUI(MAST_MOUNT_EYE_RADIUS), 3);
+        int[] xPoints = { xCenter, xCenter + half, xCenter, xCenter - half };
+        int[] yPoints = { yEye - half, yEye, yEye + half, yEye };
+        g2d.fillPolygon(xPoints, yPoints, 4);
+        g2d.setColor(eyeColor.darker());
+        g2d.drawPolygon(xPoints, yPoints, 4);
     }
 
     /**
@@ -1085,6 +1327,24 @@ class LOSElevationDiagramPanel extends JPanel {
         g2d.drawString(altLabel, xCenter - labelWidth / 2, yBottom + fontMetrics.getHeight());
     }
 
+    /**
+     * Computes the bottom level for a unit's silhouette. Most units use their TW height (e.g., Mek spans 2 levels from
+     * bottom to top). Grounded altitude units (landed dropships) extend from the hex ground level to their full height,
+     * since their physical height is much taller than the standard TW height of 1.
+     */
+    private int computeUnitBottom(DiagramUnitType unitType, boolean isHullDown,
+          int topLevel, int groundElevation) {
+        if (unitType.isAltitudeUnit()) {
+            // Grounded dropship/small craft: extends from ground level to full height
+            return groundElevation;
+        }
+        int twHeight = unitType.twHeight();
+        if (isHullDown) {
+            twHeight = Math.max(1, twHeight - 1);
+        }
+        return topLevel - twHeight;
+    }
+
     private void drawUnitSilhouette(Graphics2D g2d, DiagramMetrics metrics,
           int hexIndex, int bottomLevel, int topLevel,
           Color barColor, DiagramUnitType unitType, boolean facingRight) {
@@ -1101,13 +1361,23 @@ class LOSElevationDiagramPanel extends JPanel {
         int silhouetteHeight = levelBasedHeight;
         int yTop = yBottom - silhouetteHeight;
 
-        if (unitType == DiagramUnitType.SUPERHEAVY_MEK) {
-            // Draw the silhouette at 2 levels (bottom 2/3 of the 3-level span),
-            // with a T-bar turret marker extending up to the actual top level
-            int bodyHeight = Math.max(yBottom - metrics.levelToY(bottomLevel + 2), 2);
+        // Tall units (superheavy Meks, grounded dropships) draw the silhouette at the base
+        // with a T-bar extending up to the actual top height, so they don't appear airborne.
+        int twLevels = topLevel - bottomLevel;
+        boolean isTallUnit = (unitType == DiagramUnitType.SUPERHEAVY_MEK)
+              || (unitType.isAltitudeUnit() && (twLevels > 2));
+        if (isTallUnit) {
+            // Draw silhouette at the bottom 2 levels, T-bar extends to actual top
+            int bodyLevels = Math.min(2, twLevels);
+            int bodyHeight = Math.max(yBottom - metrics.levelToY(bottomLevel + bodyLevels), 2);
             int yBodyTop = yBottom - bodyHeight;
-            drawSuperHeavyMekSilhouette(g2d, xCenter, yBodyTop, silhouetteWidth, bodyHeight,
-                  barColor, facingRight);
+            if (unitType == DiagramUnitType.SUPERHEAVY_MEK) {
+                drawSuperHeavyMekSilhouette(g2d, xCenter, yBodyTop, silhouetteWidth, bodyHeight,
+                      barColor, facingRight);
+            } else {
+                drawUnitShape(g2d, unitType, xCenter, yBodyTop, silhouetteWidth, bodyHeight,
+                      barColor, facingRight);
+            }
             drawTurretMarker(g2d, xCenter, yBodyTop, yTop, barColor);
         } else {
             drawUnitShape(g2d, unitType, xCenter, yTop, silhouetteWidth, silhouetteHeight,
@@ -1522,7 +1792,7 @@ class LOSElevationDiagramPanel extends JPanel {
      */
     private void drawAeroFighterSilhouette(Graphics2D g2d, int xCenter, int yTop,
           int width, int height, Color color, boolean facingRight) {
-        BufferedImage image = loadSilhouetteImage("Aerospace_Fighter_Silhouette.png");
+        BufferedImage image = loadSilhouetteImage("Aerospace_Fighter.png");
         if (image != null) {
             drawSilhouetteImage(g2d, image, xCenter, yTop, height, color, facingRight);
             return;
@@ -1991,9 +2261,6 @@ class LOSElevationDiagramPanel extends JPanel {
     }
 
     /**
-     * Draws the LOS line from attacker to target.
-     */
-    /**
      * Draws zigzag "break" indicators at the top and/or bottom edges when the elevation range has been capped. This is
      * a standard engineering diagram convention indicating that the axis has been truncated. A small label shows the
      * actual extreme elevation beyond the visible range.
@@ -2068,6 +2335,14 @@ class LOSElevationDiagramPanel extends JPanel {
         g2d.drawString(label, labelX, labelY);
     }
 
+    /**
+     * Draws the LOS line as a straight segment from the attacker's eye level to the target's eye level. The
+     * line is informational — it shows the path the units' eyes would trace toward each other. Whether terrain
+     * actually blocks LOS is conveyed by the red outline on the offending hex bar (drawn in {@link #drawTerrain})
+     * and by the colour of this line itself ({@link #COLOR_LOS_BLOCKED} vs {@link #COLOR_LOS_CLEAR}). Mode-aware
+     * blocking detection lives in {@link LOSDiagramDataBuilder}; the line stays the same shape in every mode so
+     * players read "blocked by this red hex" instead of trying to interpret a bent line.
+     */
     private void drawLosLine(Graphics2D g2d, DiagramMetrics metrics, List<HexRow> hexPath) {
         if (hexPath.size() < 2) {
             return;
@@ -2077,7 +2352,6 @@ class LOSElevationDiagramPanel extends JPanel {
         int xEnd = metrics.leftMargin + ((hexPath.size() - 1) * metrics.hexColumnWidth)
               + (metrics.hexColumnWidth / 2);
 
-        // For altitude units, the LOS line originates from above the break indicator
         int yStart;
         if (metrics.attackerIsAltitude) {
             yStart = metrics.topMargin - UIUtil.scaleForGUI(ALTITUDE_SILHOUETTE_HEIGHT / 2);
@@ -2093,7 +2367,6 @@ class LOSElevationDiagramPanel extends JPanel {
 
         // Clip the LOS line to the visible drawing area so it spans the full diagram width
         // even when endpoints are far outside the visible elevation range (e.g., aerospace at altitude 1000).
-        // Without clipping, the line would only be visible in the small region where it crosses the panel.
         int yMin = metrics.topMargin;
         int yMax = metrics.topMargin + metrics.drawAreaHeight;
 
@@ -2102,7 +2375,6 @@ class LOSElevationDiagramPanel extends JPanel {
         int clippedXEnd = xEnd;
         int clippedYEnd = yEnd;
 
-        // Cohen-Sutherland-style clipping against top and bottom edges
         if (yStart != yEnd) {
             if (yStart < yMin) {
                 clippedXStart = xStart + (int) ((long) (xEnd - xStart) * (yMin - yStart) / (yEnd - yStart));
@@ -2252,6 +2524,14 @@ class LOSElevationDiagramPanel extends JPanel {
         if (hex.hasFields()) {
             tooltip.append("<br>Planted Fields");
         }
+        if (hex.eruptingGeyser()) {
+            int geyserTopElevation = hex.groundElevation() + GEYSER_PLUME_LEVELS;
+            boolean geyserAffectsLos = geyserTopElevation >= hex.losLineElevation();
+            tooltip.append("<br>Erupting Geyser (top elev ").append(geyserTopElevation).append(")");
+            if (!geyserAffectsLos) {
+                tooltip.append(" - <i>LOS line above geyser</i>");
+            }
+        }
         if (hex.splitHex() && hex.splitAlternate() != null) {
             tooltip.append("<br><i>Split hex (alternate: ")
                   .append(hex.splitAlternate().toFriendlyString())
@@ -2273,6 +2553,9 @@ class LOSElevationDiagramPanel extends JPanel {
             }
             if (hex.hasScreen() || hex.hasFields() || hex.hasFire()) {
                 anyTerrainReachesLos = true;
+            }
+            if (hex.eruptingGeyser()) {
+                anyTerrainReachesLos |= (hex.groundElevation() + GEYSER_PLUME_LEVELS) >= hex.losLineElevation();
             }
             if (anyTerrainReachesLos) {
                 tooltip.append("<br><font color='orange'>Affects LOS (modifier)</font>");

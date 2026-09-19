@@ -42,7 +42,6 @@ import megamek.common.ToHitData;
 import megamek.common.board.Coords;
 import megamek.common.compute.Compute;
 import megamek.common.enums.MoveStepType;
-import megamek.common.equipment.GunEmplacement;
 import megamek.common.game.Game;
 import megamek.common.interfaces.ILocationExposureStatus;
 import megamek.common.moves.MovePath;
@@ -187,10 +186,10 @@ public class AirMekRamAttackAction extends DisplacementAttackAction {
 
         // check range
         if (src.distance(target.getPosition()) > 1) {
-            if (null != targetEntity.getSecondaryPositions()) {
+            if (targetEntity.getSecondaryPositions() != null) {
                 boolean inSecondaryRange = false;
                 for (int i : targetEntity.getSecondaryPositions().keySet()) {
-                    if (null != targetEntity.getSecondaryPositions().get(i)) {
+                    if (targetEntity.getSecondaryPositions().get(i) != null) {
                         if (src.distance(targetEntity.getSecondaryPositions().get(i)) < 2) {
                             inSecondaryRange = true;
                             break;
@@ -236,7 +235,7 @@ public class AirMekRamAttackAction extends DisplacementAttackAction {
         }
 
         // Can't target units in buildings (from the outside).
-        if ((null != bldg) && (!targIsBuilding)
+        if ((bldg != null) && (!targIsBuilding)
               && Compute.isInBuilding(game, targetEntity)) {
             if (!Compute.isInBuilding(game, ae)) {
                 return new ToHitData(TargetRoll.IMPOSSIBLE,
@@ -384,9 +383,9 @@ public class AirMekRamAttackAction extends DisplacementAttackAction {
         if ((ramStep != null)) {
             isReachable = target.getPosition().equals(ramStep.getPosition());
             if (!isReachable && (target instanceof Entity)
-                  && (null != target.getSecondaryPositions())) {
+                && (target.getSecondaryPositions() != null)) {
                 for (int i : target.getSecondaryPositions().keySet()) {
-                    if (null != target.getSecondaryPositions().get(i)) {
+                    if (target.getSecondaryPositions().get(i) != null) {
                         isReachable = target.getSecondaryPositions().get(i).equals(ramStep.getPosition());
                         if (isReachable) {
                             break;

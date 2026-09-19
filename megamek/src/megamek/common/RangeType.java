@@ -72,6 +72,7 @@ public class RangeType {
     }
 
     // returns short/med/long range
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getRangeID(int range) {
         if (range <= r_short) {
             return RANGE_SHORT;
@@ -87,6 +88,7 @@ public class RangeType {
     }
 
     // This quickly returns the minimum range modifier
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getMinRangeMod(int range) {
         return (range > r_min) ? 0 : (r_min - range + 1);
     }
@@ -136,7 +138,7 @@ public class RangeType {
      */
     private static int calculateRangeBracket(int primaryDistance, int secondaryDistance, int[] ranges,
           boolean useExtremeRange, boolean useLOSRange, boolean isC3) {
-        if (null == ranges) {
+        if (ranges == null) {
             return RANGE_OUT;
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 - The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -18,8 +18,8 @@
  */
 package megamek.client.ui.dialogs.phaseDisplay;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -28,7 +28,6 @@ import static org.mockito.Mockito.when;
 
 import java.awt.GraphicsEnvironment;
 import java.util.Vector;
-
 import javax.swing.JFrame;
 
 import megamek.client.ui.Messages;
@@ -41,15 +40,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for ManeuverChoiceDialog tooltip functionality.
- *
- * Tests verify that:
- * 1. Tooltips are properly generated for all maneuver types
- * 2. Tooltips contain required information (requirements, costs, modifiers, effects)
- * 3. Tooltips show current values when maneuvers are unavailable
- * 4. Resource strings are properly loaded from messages.properties
- * 5. Dynamic values are correctly formatted using MessageFormat
- *
- * Note: These tests require a graphical environment and the entire test class will be skipped in headless CI environments.
+ * <p>
+ * Tests verify that: 1. Tooltips are properly generated for all maneuver types 2. Tooltips contain required information
+ * (requirements, costs, modifiers, effects) 3. Tooltips show current values when maneuvers are unavailable 4. Resource
+ * strings are properly loaded from messages.properties 5. Dynamic values are correctly formatted using MessageFormat
+ * <p>
+ * Note: These tests require a graphical environment and the entire test class will be skipped in headless CI
+ * environments.
  *
  * @author MegaMek Team
  * @since 2025-11-10
@@ -66,7 +63,7 @@ class ManeuverChoiceDialogTest {
     @BeforeAll
     static void checkGraphicsEnvironment() {
         assumeFalse(GraphicsEnvironment.isHeadless(),
-            "Skipping GUI tests - no display available in headless environment");
+              "Skipping GUI tests - no display available in headless environment");
     }
 
     @BeforeEach
@@ -90,13 +87,14 @@ class ManeuverChoiceDialogTest {
     void testAllManeuversHaveTooltips() {
         // Test that all maneuvers have valid tooltips
         for (int type = 0; type < ManeuverType.MAN_SIZE; type++) {
-            String tooltip = ManeuverType.getManeuverTooltip(type, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+            String tooltip = ManeuverType.getManeuverTooltip(type, true, TEST_VELOCITY, TEST_ALTITUDE,
+                  TEST_CEILING, false);
             assertNotNull(tooltip, ManeuverType.getTypeName(type) + " tooltip should not be null");
             assertFalse(tooltip.isEmpty(), ManeuverType.getTypeName(type) + " tooltip should not be empty");
             assertTrue(tooltip.contains("<HTML>"),
-                ManeuverType.getTypeName(type) + " tooltip should be HTML formatted");
+                  ManeuverType.getTypeName(type) + " tooltip should be HTML formatted");
             assertTrue(tooltip.contains(ManeuverType.getTypeName(type)),
-                ManeuverType.getTypeName(type) + " tooltip should contain maneuver name");
+                  ManeuverType.getTypeName(type) + " tooltip should contain maneuver name");
         }
     }
 
@@ -106,19 +104,21 @@ class ManeuverChoiceDialogTest {
     @Test
     void testCommonResourceKeysExist() {
         assertResourceExists("ManeuverChoiceDialog.requirementsLabel",
-            "Requirements label should exist");
+              "Requirements label should exist");
         assertResourceExists("ManeuverChoiceDialog.thrustCostLabel",
-            "Thrust cost label should exist");
+              "Thrust cost label should exist");
         assertResourceExists("ManeuverChoiceDialog.controlModLabel",
-            "Control modifier label should exist");
+              "Control modifier label should exist");
         assertResourceExists("ManeuverChoiceDialog.effectLabel",
-            "Effect label should exist");
+              "Effect label should exist");
         assertResourceExists("ManeuverChoiceDialog.currentValue",
-            "Current value format should exist");
+              "Current value format should exist");
         assertResourceExists("ManeuverChoiceDialog.currentValues",
-            "Current values (plural) format should exist");
+              "Current values (plural) format should exist");
+        assertResourceExists("ManeuverChoiceDialog.currentAltitude",
+              "Current altitude format should exist");
         assertResourceExists("ManeuverChoiceDialog.notVSTOL",
-            "Not VSTOL message should exist");
+              "Not VSTOL message should exist");
     }
 
     /**
@@ -134,8 +134,8 @@ class ManeuverChoiceDialogTest {
 
         // None maneuver should always be enabled
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_NONE, 0, 0, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "None maneuver should always be available");
+                    false, 0, mockBoard, mockPath),
+              "None maneuver should always be available");
     }
 
     /**
@@ -149,16 +149,16 @@ class ManeuverChoiceDialogTest {
 
         // Loop requires velocity >= 4
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_LOOP, 3, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Loop should not be available at velocity 3");
+                    false, 0, mockBoard, mockPath),
+              "Loop should not be available at velocity 3");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_LOOP, 4, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Loop should be available at velocity 4");
+                    false, 0, mockBoard, mockPath),
+              "Loop should be available at velocity 4");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_LOOP, 10, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Loop should be available at velocity 10");
+                    false, 0, mockBoard, mockPath),
+              "Loop should be available at velocity 10");
     }
 
     /**
@@ -172,20 +172,20 @@ class ManeuverChoiceDialogTest {
 
         // Immelman requires velocity >= 3 AND altitude < 9
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_IMMELMAN, 2, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Immelman should not be available at velocity 2");
+                    false, 0, mockBoard, mockPath),
+              "Immelman should not be available at velocity 2");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_IMMELMAN, 3, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Immelman should be available at velocity 3, altitude 5");
+                    false, 0, mockBoard, mockPath),
+              "Immelman should be available at velocity 3, altitude 5");
 
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_IMMELMAN, 3, 9, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Immelman should not be available at altitude 9");
+                    false, 0, mockBoard, mockPath),
+              "Immelman should not be available at altitude 9");
 
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_IMMELMAN, 3, 10, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Immelman should not be available at altitude 10");
+                    false, 0, mockBoard, mockPath),
+              "Immelman should not be available at altitude 10");
     }
 
     /**
@@ -199,12 +199,12 @@ class ManeuverChoiceDialogTest {
 
         // Barrel Roll requires velocity >= 2
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_BARREL_ROLL, 1, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Barrel Roll should not be available at velocity 1");
+                    false, 0, mockBoard, mockPath),
+              "Barrel Roll should not be available at velocity 1");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_BARREL_ROLL, 2, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Barrel Roll should be available at velocity 2");
+                    false, 0, mockBoard, mockPath),
+              "Barrel Roll should be available at velocity 2");
     }
 
     /**
@@ -218,12 +218,12 @@ class ManeuverChoiceDialogTest {
 
         // Side Slip requires velocity > 0
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_SIDE_SLIP_LEFT, 0, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Side Slip Left should not be available at velocity 0");
+                    false, 0, mockBoard, mockPath),
+              "Side Slip Left should not be available at velocity 0");
 
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_SIDE_SLIP_RIGHT, 0, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Side Slip Right should not be available at velocity 0");
+                    false, 0, mockBoard, mockPath),
+              "Side Slip Right should not be available at velocity 0");
 
         // Note: Ground map checking is more complex and requires real MovePath
     }
@@ -239,12 +239,12 @@ class ManeuverChoiceDialogTest {
 
         // VIFF requires VSTOL capability
         assertFalse(ManeuverType.canPerform(ManeuverType.MAN_VIFF, TEST_VELOCITY, TEST_ALTITUDE, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "VIFF should not be available for non-VSTOL units");
+                    false, 0, mockBoard, mockPath),
+              "VIFF should not be available for non-VSTOL units");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_VIFF, TEST_VELOCITY, TEST_ALTITUDE, TEST_CEILING,
-            true, 0, mockBoard, mockPath),
-            "VIFF should be available for VSTOL units");
+                    true, 0, mockBoard, mockPath),
+              "VIFF should be available for VSTOL units");
     }
 
     /**
@@ -258,12 +258,12 @@ class ManeuverChoiceDialogTest {
 
         // Hammerhead and Half Roll are always available
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_HAMMERHEAD, 0, 0, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Hammerhead should always be available");
+                    false, 0, mockBoard, mockPath),
+              "Hammerhead should always be available");
 
         assertTrue(ManeuverType.canPerform(ManeuverType.MAN_HALF_ROLL, 0, 0, TEST_CEILING,
-            false, 0, mockBoard, mockPath),
-            "Half Roll should always be available");
+                    false, 0, mockBoard, mockPath),
+              "Half Roll should always be available");
     }
 
     /**
@@ -272,27 +272,48 @@ class ManeuverChoiceDialogTest {
     @Test
     void testTooltipsContainThrustCosts() {
         // Test that tooltips contain thrust cost label
-        String loopTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_LOOP, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String loopTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_LOOP,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(loopTooltip.contains("Thrust Cost") || loopTooltip.contains("thrust"),
-            "Loop tooltip should contain thrust cost information");
+              "Loop tooltip should contain thrust cost information");
 
         // Test that velocity-based costs are shown correctly in tooltips
-        String hammerheadTooltip5 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String hammerheadTooltip5 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(hammerheadTooltip5.contains("5"),
-            "Hammerhead tooltip at velocity 5 should show cost of 5");
+              "Hammerhead tooltip at velocity 5 should show cost of 5");
 
-        String hammerheadTooltip10 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD, true, 10, TEST_ALTITUDE, false);
+        String hammerheadTooltip10 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD,
+              true,
+              10,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(hammerheadTooltip10.contains("10"),
-            "Hammerhead tooltip at velocity 10 should show cost of 10");
+              "Hammerhead tooltip at velocity 10 should show cost of 10");
 
         // Test VIFF velocity+2 formula
-        String viffTooltip5 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_VIFF, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String viffTooltip5 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_VIFF,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(viffTooltip5.contains("7"),
-            "VIFF tooltip at velocity 5 should show cost of 7 (velocity + 2)");
+              "VIFF tooltip at velocity 5 should show cost of 7 (velocity + 2)");
 
-        String viffTooltip10 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_VIFF, true, 10, TEST_ALTITUDE, false);
+        String viffTooltip10 = ManeuverType.getManeuverTooltip(ManeuverType.MAN_VIFF, true, 10, TEST_ALTITUDE,
+              TEST_CEILING, false);
         assertTrue(viffTooltip10.contains("12"),
-            "VIFF tooltip at velocity 10 should show cost of 12 (velocity + 2)");
+              "VIFF tooltip at velocity 10 should show cost of 12 (velocity + 2)");
     }
 
     /**
@@ -301,27 +322,68 @@ class ManeuverChoiceDialogTest {
     @Test
     void testTooltipsContainControlModifiers() {
         // Test that tooltips contain control modifier label
-        String loopTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_LOOP, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String loopTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_LOOP,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(loopTooltip.contains("Control") || loopTooltip.contains("Mod"),
-            "Loop tooltip should contain control modifier information");
+              "Loop tooltip should contain control modifier information");
 
         // Test VSTOL-dependent control modifiers in tooltips (Side Slip)
-        String sideSlipNonVSTOL = ManeuverType.getManeuverTooltip(ManeuverType.MAN_SIDE_SLIP_LEFT, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String sideSlipNonVSTOL = ManeuverType.getManeuverTooltip(ManeuverType.MAN_SIDE_SLIP_LEFT,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(sideSlipNonVSTOL.contains("+0") || sideSlipNonVSTOL.contains("0"),
-            "Side Slip tooltip for non-VSTOL should show +0 modifier");
+              "Side Slip tooltip for non-VSTOL should show +0 modifier");
 
-        String sideSlipVSTOL = ManeuverType.getManeuverTooltip(ManeuverType.MAN_SIDE_SLIP_LEFT, true, TEST_VELOCITY, TEST_ALTITUDE, true);
+        String sideSlipVSTOL = ManeuverType.getManeuverTooltip(ManeuverType.MAN_SIDE_SLIP_LEFT,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              true);
         assertTrue(sideSlipVSTOL.contains("-1"),
-            "Side Slip tooltip for VSTOL should show -1 modifier");
+              "Side Slip tooltip for VSTOL should show -1 modifier");
 
         // Test that different maneuvers show different modifiers
-        String hammerheadTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String hammerheadTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HAMMERHEAD,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(hammerheadTooltip.contains("3") || hammerheadTooltip.contains("+3"),
-            "Hammerhead tooltip should show +3 control modifier");
+              "Hammerhead tooltip should show +3 control modifier");
 
-        String halfRollTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HALF_ROLL, true, TEST_VELOCITY, TEST_ALTITUDE, false);
+        String halfRollTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_HALF_ROLL,
+              true,
+              TEST_VELOCITY,
+              TEST_ALTITUDE,
+              TEST_CEILING,
+              false);
         assertTrue(halfRollTooltip.contains("-1"),
-            "Half Roll tooltip should show -1 control modifier");
+              "Half Roll tooltip should show -1 control modifier");
+    }
+
+    /**
+     * Test that an unavailable Split-S tooltip explains itself by showing the current altitude (issue #8699).
+     */
+    @Test
+    void testSplitSTooltipShowsAltitudeWhenUnavailable() {
+        // Altitude 2 over a ground map (ceiling 0): a Split-S would end in the ground
+        String splitSTooltip = ManeuverType.getManeuverTooltip(ManeuverType.MAN_SPLIT_S,
+              false,
+              TEST_VELOCITY,
+              2,
+              0,
+              false);
+        assertTrue(splitSTooltip.contains("Altitude: 2"),
+              "Unavailable Split-S tooltip should show the current altitude");
     }
 
     /**
@@ -335,8 +397,8 @@ class ManeuverChoiceDialogTest {
     }
 
     /**
-     * Test that checkPerformability updates dialog state.
-     * This is a basic test - full UI testing would require TestFX or similar.
+     * Test that checkPerformability updates dialog state. This is a basic test - full UI testing would require TestFX
+     * or similar.
      */
     @Test
     void testCheckPerformabilityUpdatesState() {
@@ -357,6 +419,6 @@ class ManeuverChoiceDialogTest {
         String value = Messages.getString(key);
         assertNotNull(value, message + " (key: " + key + " is null)");
         assertFalse(value.isEmpty(), message + " (key: " + key + " is empty)");
-        assertFalse(value.equals(key), message + " (key: " + key + " not found - returned key itself)");
+        assertNotEquals(value, key, message + " (key: " + key + " not found - returned key itself)");
     }
 }

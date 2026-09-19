@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2021-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -33,25 +33,16 @@
 package megamek.client.ui.panels.phaseDisplay.lobby;
 
 import static megamek.client.ui.util.UIUtil.WARNING_SIGN;
-import static megamek.client.ui.util.UIUtil.alternateTableBGColor;
 import static megamek.client.ui.util.UIUtil.scaleForGUI;
 import static megamek.client.ui.util.UIUtil.uiGreen;
 import static megamek.client.ui.util.UIUtil.uiYellow;
 
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.GridLayout;
-import java.awt.Image;
-import java.awt.Point;
+import java.awt.*;
 import java.awt.event.MouseEvent;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.BorderFactory;
-import javax.swing.ImageIcon;
-import javax.swing.JTable;
-import javax.swing.ListSelectionModel;
-import javax.swing.UIManager;
+import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -62,9 +53,10 @@ import megamek.client.bot.BotClient;
 import megamek.client.ui.Messages;
 import megamek.client.ui.clientGUI.GUIPreferences;
 import megamek.client.ui.util.UIUtil;
-import megamek.common.board.Board;
-import megamek.common.interfaces.IStartingPositions;
 import megamek.common.Player;
+import megamek.common.board.Board;
+import megamek.common.game.Game;
+import megamek.common.interfaces.IStartingPositions;
 import megamek.common.options.OptionsConstants;
 
 class PlayerTable extends JTable {
@@ -74,7 +66,8 @@ class PlayerTable extends JTable {
     PlayerTableModel model;
     ChatLounge lobby;
 
-    public PlayerTable(PlayerTableModel pm, ChatLounge cl) {
+    public PlayerTable(PlayerTableModel pm,
+                       ChatLounge cl) {
         super(pm);
         model = pm;
         lobby = cl;
@@ -130,9 +123,12 @@ class PlayerTable extends JTable {
             String msgNoInitiativeModifier = Messages.getString("ChatLounge.NoInitiativeModifier");
             result.append(msgNoInitiativeModifier);
         }
-        if (lobby.game().getOptions().booleanOption(OptionsConstants.ADVANCED_MINEFIELDS)) {
+        if (Game.rulesManager.getRulesGame()
+                             .allowMinefields(lobby.game()
+                                                   .getOptions()
+                                                   .booleanOption(OptionsConstants.ADVANCED_MINEFIELDS))) {
             int mines = player.getNbrMFConventional() + player.getNbrMFActive()
-                  + player.getNbrMFInferno() + player.getNbrMFVibra();
+                        + player.getNbrMFInferno() + player.getNbrMFVibra();
             String msgTotalMinefields = Messages.getString("ChatLounge.TotalMinefields");
             result.append("<BR>").append(msgTotalMinefields).append(": ").append(mines);
         }
@@ -141,7 +137,6 @@ class PlayerTable extends JTable {
 
     public static class PlayerTableModel extends AbstractTableModel {
 
-        static final int COL_PLAYER = 0;
         static final int N_COL = 1;
 
         private final ArrayList<Player> players;
@@ -177,7 +172,8 @@ class PlayerTable extends JTable {
         }
 
         @Override
-        public Object getValueAt(int row, int col) {
+        public Object getValueAt(int row,
+                                 int col) {
             return getPlayerAt(row);
         }
 
@@ -191,6 +187,7 @@ class PlayerTable extends JTable {
         public PlayerRenderer() {
             setLayout(new GridLayout(1, 1, 5, 0));
             setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0));
+            setIconTextGap(10);
         }
 
         private void setImage(Image img) {
@@ -198,15 +195,26 @@ class PlayerTable extends JTable {
         }
 
         @Override
-        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
-              boolean hasFocus, int row, int column) {
+        public Component getTableCellRendererComponent(JTable table,
+                                                       Object value,
+                                                       boolean isSelected,
+                                                       boolean hasFocus,
+                                                       int row,
+                                                       int column) {
 
             Player player = (Player) value;
+            super.getTableCellRendererComponent(table, getPlayerDescription(player), isSelected, hasFocus, row, column);
+            Image camo = player.getCamouflage().getImage();
+            int size = scaleForGUI(PLAYER_TABLE_ROW_HEIGHT) / 2;
+            setImage(camo.getScaledInstance(-1, size, Image.SCALE_SMOOTH));
+            return this;
+        }
 
+        private StringBuilder getPlayerDescription(Player player) {
             StringBuilder result = new StringBuilder("<HTML><NOBR>");
             // First Line - Player Name
             if ((lobby.client() instanceof BotClient) && player.equals(lobby.localPlayer())
-                  || lobby.client().getBots().containsKey(player.getName())) {
+                || lobby.client().getBots().containsKey(player.getName())) {
                 result.append(UIUtil.BOT_MARKER);
             }
             result.append(player.getName());
@@ -216,7 +224,7 @@ class PlayerTable extends JTable {
             boolean isEnemy = lobby.localPlayer().isEnemyOf(player);
             Color color = isEnemy ? GUIPreferences.getInstance().getWarningColor() : uiGreen();
             result.append("<FONT").append(UIUtil.colorString(color)).append(">");
-            result.append(Player.TEAM_NAMES[player.getTeam()]);
+            result.append(player.getTeamName());
             result.append("</FONT>");
 
             // Deployment Position
@@ -226,16 +234,16 @@ class PlayerTable extends JTable {
 
             final var gOpts = lobby.game().getOptions();
             if (gOpts.booleanOption(OptionsConstants.BASE_SET_PLAYER_DEPLOYMENT_TO_PLAYER_0)
-                  && !player.isBot()
-                  && player.getId() != 0) {
+                && !player.isBot()
+                && player.getId() != 0) {
                 result.append(msg_start).append(": ").append(Messages.getString("ChatLounge.Player0"));
             } else if ((!lobby.client().getLocalPlayer().isGameMaster()
-                  && (isEnemy)
-                  && (gOpts.booleanOption(OptionsConstants.BASE_BLIND_DROP)
-                  || gOpts.booleanOption(OptionsConstants.BASE_REAL_BLIND_DROP)))) {
+                        && (isEnemy)
+                        && (gOpts.booleanOption(OptionsConstants.BASE_BLIND_DROP)
+                            || gOpts.booleanOption(OptionsConstants.BASE_REAL_BLIND_DROP)))) {
                 result.append(msg_start).append(": ").append(Messages.getString("ChatLounge.Blind"));
             } else if ((player.getStartingPos() >= 0)
-                  && (player.getStartingPos() <= IStartingPositions.START_LOCATION_NAMES.length)) {
+                       && (player.getStartingPos() <= IStartingPositions.START_LOCATION_NAMES.length)) {
                 result.append(msg_start)
                       .append(": ")
                       .append(IStartingPositions.START_LOCATION_NAMES[player.getStartingPos()]);
@@ -259,7 +267,7 @@ class PlayerTable extends JTable {
                 }
                 int so = player.getStartOffset();
                 int sw = player.getStartWidth();
-                if ((so != 0) || (sw != 3)) {
+                if ((so != 0) || !(sw == 3 || (sw == 1 && Game.rulesManager.getRulesGame().isWalkOnDeployment()))) {
                     result.append(", ").append(so);
                     result.append(", ").append(sw);
                 }
@@ -305,39 +313,7 @@ class PlayerTable extends JTable {
                 result.append("\uD83D\uDD2E  GM");
                 result.append("</FONT>");
             }
-
-            setText(result.toString());
-
-            setIconTextGap(10);
-            Image camo = player.getCamouflage().getImage();
-            int size = scaleForGUI(PLAYER_TABLE_ROW_HEIGHT) / 2;
-            setImage(camo.getScaledInstance(-1, size, Image.SCALE_SMOOTH));
-
-            if (isSelected) {
-                setForeground(table.getSelectionForeground());
-                setBackground(table.getSelectionBackground());
-            } else {
-                setForeground(table.getForeground());
-                Color background = table.getBackground();
-                if (row % 2 != 0) {
-                    background = alternateTableBGColor();
-                }
-                setBackground(background);
-            }
-
-            if (hasFocus) {
-                if (!isSelected) {
-                    Color col = UIManager.getColor("Table.focusCellForeground");
-                    if (col != null) {
-                        setForeground(col);
-                    }
-                    col = UIManager.getColor("Table.focusCellBackground");
-                    if (col != null) {
-                        setBackground(col);
-                    }
-                }
-            }
-            return this;
+            return result;
         }
     }
 }

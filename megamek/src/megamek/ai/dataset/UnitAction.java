@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -42,9 +42,11 @@ import megamek.client.ui.SharedUtility;
 import megamek.common.compute.Compute;
 import megamek.common.moves.MovePath;
 import megamek.common.moves.MoveStep;
+import megamek.common.rolls.TargetRoll;
 import megamek.common.units.Entity;
 import megamek.common.units.IAero;
 import megamek.common.units.UnitRole;
+import megamek.logging.MMLogger;
 
 /**
  * Flexible container for unit action data using a map-based approach with enum keys.
@@ -52,6 +54,7 @@ import megamek.common.units.UnitRole;
  * @author Luana Coppio
  */
 public class UnitAction extends EntityDataMap<UnitAction.Field> {
+    private static final MMLogger LOGGER = MMLogger.create(UnitAction.class);
 
     /**
      * Enum defining all available unit action fields.
@@ -92,7 +95,8 @@ public class UnitAction extends EntityDataMap<UnitAction.Field> {
         ARMOR_RIGHT_P,
         ARMOR_BACK_P,
         ROLE,
-        WEAPON_DMG_FACING_SHORT_MEDIUM_LONG_RANGE
+        WEAPON_DMG_FACING_SHORT_MEDIUM_LONG_RANGE,
+        MOVEMENT_TYPE
     }
 
     /**
@@ -141,6 +145,7 @@ public class UnitAction extends EntityDataMap<UnitAction.Field> {
               .put(Field.MP_USED, movePath.getMpUsed())
               .put(Field.MAX_MP, movePath.getMaxMP())
               .put(Field.MP_P, movePath.getMaxMP() > 0 ? (double) movePath.getMpUsed() / movePath.getMaxMP() : 0.0)
+              .put(Field.MOVEMENT_TYPE, movePath.getLastStepMovementType())
               .put(Field.HEAT_P,
                     entity.getHeatCapacity() > 0 ? entity.getHeat() / (double) entity.getHeatCapacity() : 0.0);
 
@@ -151,12 +156,20 @@ public class UnitAction extends EntityDataMap<UnitAction.Field> {
               .put(Field.PRONE, movePath.getFinalProne())
               .put(Field.LEGAL, movePath.isMoveLegal());
 
-        // Failure chance calculation
-        map.put(Field.CHANCE_OF_FAILURE,
-              SharedUtility.getPSRList(movePath)
-                    .stream()
-                    .map(psr -> psr.getValue() / 36d)
-                    .reduce(1.0, (a, b) -> a * b));
+        // Failure chance calculation. The piloting roll replay starts from the entity's current position, which is
+        // gone once the move loaded the unit (Mount, carrier recovery) or took it off the board. The value then
+        // matches a move that needs no rolls.
+        if (entity.getPosition() == null) {
+            LOGGER.debug("Piloting roll replay skipped: {} has no position (loaded or off board)",
+                  entity.getShortName());
+            map.put(Field.CHANCE_OF_FAILURE, 1.0);
+        } else {
+            double chanceOfFailure = 1.0;
+            for (TargetRoll pilotingRoll : SharedUtility.getPSRList(movePath)) {
+                chanceOfFailure *= pilotingRoll.getValue() / 36d;
+            }
+            map.put(Field.CHANCE_OF_FAILURE, chanceOfFailure);
+        }
 
         // Movement steps
         map.put(Field.STEPS, movePath.getStepVector().stream().map(MoveStep::getType).collect(Collectors.toList()));

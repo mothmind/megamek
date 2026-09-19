@@ -34,10 +34,12 @@ package megamek.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.List;
 
 import megamek.common.enums.TechRating;
 import megamek.common.equipment.EquipmentType;
@@ -131,7 +133,7 @@ public class DamageInterruptCircuitTest {
             EquipmentType dicType = EquipmentType.get("DamageInterruptCircuit");
 
             assertNotNull(dicType, "DIC equipment should exist");
-            assertTrue(dicType instanceof MiscType, "DIC should be MiscType");
+            assertInstanceOf(MiscType.class, dicType, "DIC should be MiscType");
 
             MiscType dicMisc = (MiscType) dicType;
             assertTrue(dicMisc.hasFlag(MiscType.F_DAMAGE_INTERRUPT_CIRCUIT),
@@ -398,7 +400,7 @@ public class DamageInterruptCircuitTest {
 
         @Test
         @DisplayName("DIC cost should be 150 C-bills for single pilot Mek")
-        void dicCostForSinglePilot() throws Exception {
+        void dicCostForSinglePilot() {
             Mek mek = createMek(true, false);
             EquipmentType dicType = EquipmentType.get("DamageInterruptCircuit");
             assertNotNull(dicType, "DIC equipment should exist");
@@ -504,7 +506,7 @@ public class DamageInterruptCircuitTest {
             EquipmentType dicType = EquipmentType.get("DamageInterruptCircuit");
             assertNotNull(dicType, "DIC equipment should exist");
 
-            assertTrue(dicType instanceof MiscType, "DIC should be MiscType");
+            assertInstanceOf(MiscType.class, dicType, "DIC should be MiscType");
             MiscType dicMisc = (MiscType) dicType;
 
             assertTrue(dicMisc.hasFlag(MiscType.F_MEK_EQUIPMENT),
@@ -517,7 +519,7 @@ public class DamageInterruptCircuitTest {
             EquipmentType dicType = EquipmentType.get("DamageInterruptCircuit");
             assertNotNull(dicType, "DIC equipment should exist");
 
-            assertTrue(dicType instanceof MiscType, "DIC should be MiscType");
+            assertInstanceOf(MiscType.class, dicType, "DIC should be MiscType");
             MiscType dicMisc = (MiscType) dicType;
 
             assertFalse(dicMisc.isHittable(), "DIC should not be hittable (0 crits, non-hittable equipment)");
@@ -539,8 +541,8 @@ public class DamageInterruptCircuitTest {
             EquipmentType dicType = EquipmentType.get("DamageInterruptCircuit");
             assertNotNull(dicType, "DIC equipment should exist");
 
-            assertTrue(dicType.getRulesRefs().contains("39, IO"),
-                  "DIC should reference IO p.39");
+            assertEquals(List.of(new RulesRef(SourceBookCode.IO_AE, 62)), dicType.getRulesRefs(),
+                  "DIC should reference IO:AE p.62");
         }
     }
 }

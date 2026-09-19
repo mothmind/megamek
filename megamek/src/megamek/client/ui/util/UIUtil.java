@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2020-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -41,6 +41,7 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.awt.image.ImageObserver;
 import java.io.Serial;
+import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,17 +50,46 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
 
 import megamek.MMConstants;
+import megamek.common.units.Entity;
+import megamek.common.units.TrainLayout;
 import megamek.client.ui.Messages;
 import megamek.client.ui.buttons.MMToggleButton;
 import megamek.client.ui.clientGUI.GUIPreferences;
 import megamek.client.ui.comboBoxes.MMComboBox;
 import megamek.client.ui.widget.RawImagePanel;
 import megamek.common.Player;
+import megamek.common.annotations.Nullable;
 import megamek.logging.MMLogger;
 
 public final class UIUtil {
+
+    /**
+     * Returns the label for where a unit sits in its train: the tractor heading it, then numbered trailers behind.
+     * <p>
+     * {@link TrainLayout#trainPosition(Entity)} decides the position; the wording lives here because it is shown to
+     * the player. Returns an empty string when the unit is not part of a train.
+     * </p>
+     *
+     * @param unit the unit to label
+     *
+     * @return the label, or an empty string when the unit is not in a train
+     */
+    public static String trainPositionLabel(Entity unit) {
+        int position = TrainLayout.trainPosition(unit);
+
+        if (position == TrainLayout.NOT_IN_TRAIN) {
+            return "";
+        }
+        if (position == TrainLayout.TRACTOR_POSITION) {
+            return Messages.getString("ChatLounge.trainPositionTractor");
+        }
+
+        return Messages.getString("ChatLounge.trainPositionTrailer", position);
+    }
+
     private static final MMLogger logger = MMLogger.create(UIUtil.class);
 
     // The standard pixels-per-inch to compare against for display scaling
@@ -89,7 +119,7 @@ public final class UIUtil {
         browse(MMConstants.MUL_URL_PREFIX + mulId, parent);
     }
 
-    public static void browse(String url, Component parent) {
+    public static void browse(String url, @Nullable Component parent) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URL(url).toURI());
@@ -97,6 +127,21 @@ public final class UIUtil {
         } catch (Exception ex) {
             logger.error("", ex);
             JOptionPane.showMessageDialog(parent, ex.getMessage(), "ERROR", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    public static void browse(String url) {
+        browse(url, null);
+    }
+
+    public static void handleHyperlink(HyperlinkEvent event) {
+        if (event.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+            Component parent = (event.getSource() instanceof Component component) ? component : null;
+            URL url = event.getURL();
+            String target = (url != null) ? url.toString() : event.getDescription();
+            if ((target != null) && !target.isBlank()) {
+                UIUtil.browse(target, parent);
+            }
         }
     }
 
@@ -275,9 +320,9 @@ public final class UIUtil {
             result.add(currLine.toString());
         } else if (sepAtEnd) {
             // Remove the last unnecessary sep if there were no more Strings
-            String lastLine = result.get(result.size() - 1);
+            String lastLine = result.getLast();
             String newLine = lastLine.substring(0, lastLine.length() - sep.length());
-            result.remove(result.size() - 1);
+            result.removeLast();
             result.add(newLine);
         }
         return result;
@@ -453,6 +498,22 @@ public final class UIUtil {
      */
     public static Color uiDarkBlue() {
         return uiBgBrightness() > 130 ? LIGHT_UI_DARKBLUE : DARK_UI_DARKBLUE;
+    }
+
+    /**
+     * Paints the given component in the top menu bar's color, so that a strip placed directly below the menu bar blends
+     * with the bar above it. Falls back to the generic control color when the current theme does not define a menu bar
+     * background.
+     *
+     * @param component The component to paint in the menu bar color
+     */
+    public static void applyTopBarBackground(JComponent component) {
+        Color barBackground = UIManager.getColor("MenuBar.background");
+        if (barBackground == null) {
+            barBackground = UIManager.getColor("control");
+        }
+        component.setOpaque(true);
+        component.setBackground(barBackground);
     }
 
     /**
@@ -1353,7 +1414,8 @@ public final class UIUtil {
     private static final Color DARK_UI_YELLOW = new Color(200, 200, 60);
     private static final Color LIGHT_UI_LIGHTCYAN = new Color(40, 130, 130);
     private static final Color DARK_UI_LIGHTCYAN = new Color(100, 180, 180);
-    private static final Color LIGHT_UI_LIGHTGREEN = new Color(80, 180, 80);
+    // forest green: the old pale (80, 180, 80) washed out on a light background (GM lobby button, 2026-08-18)
+    private static final Color LIGHT_UI_LIGHTGREEN = new Color(34, 139, 34);
     private static final Color DARK_UI_LIGHTGREEN = new Color(150, 210, 150);
     private static final Color LIGHT_UI_DARKBLUE = new Color(225, 225, 245);
     private static final Color DARK_UI_DARKBLUE = new Color(50, 50, 80);

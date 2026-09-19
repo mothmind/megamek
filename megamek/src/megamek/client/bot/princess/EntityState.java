@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2000-2011 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2013-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2013-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -34,13 +34,13 @@
 package megamek.client.bot.princess;
 
 import megamek.client.bot.princess.geometry.CoordFacingCombo;
-import megamek.common.units.BuildingTarget;
 import megamek.common.board.Coords;
+import megamek.common.moves.MovePath;
+import megamek.common.options.OptionsConstants;
+import megamek.common.units.BuildingTarget;
 import megamek.common.units.Entity;
 import megamek.common.units.EntityMovementType;
 import megamek.common.units.Targetable;
-import megamek.common.moves.MovePath;
-import megamek.common.options.OptionsConstants;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 
 /**
@@ -54,6 +54,8 @@ public class EntityState {
     private int facing;
     private int secondaryFacing; // to account for torso twists
     private int heat;
+    private final int elevation;
+    private final int altitude;
     private final int hexesMoved;
     private final boolean prone;
     private final boolean immobile;
@@ -71,6 +73,8 @@ public class EntityState {
     EntityState(Targetable target) {
         position = target.getPosition();
         facing = 0;
+        elevation = target.getElevation();
+        altitude = target.getAltitude();
         hexesMoved = 0;
         heat = 0;
         prone = false;
@@ -87,6 +91,8 @@ public class EntityState {
     EntityState(Entity entity) {
         position = entity.getPosition();
         facing = entity.getFacing();
+        elevation = entity.getElevation();
+        altitude = entity.getAltitude();
         hexesMoved = entity.delta_distance;
         heat = entity.heat;
         prone = entity.isProne() || entity.isHullDown();
@@ -107,6 +113,8 @@ public class EntityState {
     EntityState(MovePath path) {
         position = path.getFinalCoords();
         facing = path.getFinalFacing();
+        elevation = path.getFinalElevation();
+        altitude = path.getFinalAltitude();
         hexesMoved = path.getHexesMoved();
         heat = path.getEntity().heat;
 
@@ -132,6 +140,7 @@ public class EntityState {
     /**
      * Create an entity state from a Targetable, but pretend it's in a different hex facing in a different direction.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     EntityState(Targetable target, CoordFacingCombo projectedTargetLocation) {
         this(target);
         position = projectedTargetLocation.getCoords();
@@ -140,6 +149,31 @@ public class EntityState {
 
     public Coords getPosition() {
         return position;
+    }
+
+    /**
+     * Returns the elevation above the hex floor this state describes: the entity's current elevation, or the
+     * final elevation of the move path this state was built from. Combine with the hex level for the absolute
+     * level, as the physical hit-table resolution does.
+     *
+     * @return the elevation above the hex floor
+     */
+    public int getElevation() {
+        return elevation;
+    }
+
+    /**
+     * Returns the altitude this state describes: the unit's current altitude, or the final altitude of the
+     * move path this state was built from.
+     *
+     * <p>Distinct from {@link #getElevation()}, and the one that matters for aerospace. Aerospace units
+     * <i>"never use elevations"</i> even when flying directly over a ground mapsheet (TW p.91), so any
+     * air-to-air geometry - range, and the dead zone above all - is measured with this.</p>
+     *
+     * @return the altitude
+     */
+    public int getAltitude() {
+        return altitude;
     }
 
     public int getFacing() {

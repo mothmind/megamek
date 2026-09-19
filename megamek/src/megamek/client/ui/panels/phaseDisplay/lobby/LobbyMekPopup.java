@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2021-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -122,6 +122,7 @@ class LobbyMekPopup {
     static final String LMP_C3JOIN = "C3JOIN";
     static final String LMP_C3_FORM_NHC3 = "C3FORMNHC3";
     static final String LMP_C3_FORM_C3 = "C3FORMC3";
+    static final String LMP_C3_MANAGER = "C3MANAGER";
     static final String LMP_C3LM = "C3LM";
     static final String LMP_C3CM = "C3CM";
     static final String LMP_SQUADRON = "SQUADRON";
@@ -141,6 +142,7 @@ class LobbyMekPopup {
     static final String LMP_UNLOAD = "UNLOAD";
     static final String LMP_DETACH_FROM_TRACTOR = "DETACHFROMTRACTOR";
     static final String LMP_DETACH_TRAILER = "DETACHTRAILER";
+    static final String LMP_CONNECT_TRAIN = "CONNECTTRAIN";
     static final String LMP_MOVE_DOWN = "MOVE_DOWN";
     static final String LMP_INDI_CAMO = "INDI_CAMO";
     static final String LMP_DAMAGE = "DAMAGE";
@@ -217,7 +219,7 @@ class LobbyMekPopup {
 
         // All command strings should follow the layout COMMAND|INFO|ID1,ID2,I3...
         // and use -1 when something is not needed (COMMAND|-1|-1)
-        String eId = "|" + (entities.isEmpty() ? "-1" : entities.get(0).getId());
+        String eId = "|" + (entities.isEmpty() ? "-1" : entities.getFirst().getId());
         String eIds = enToken(entities);
         String seIds = enToken(joinedEntities);
 
@@ -234,7 +236,18 @@ class LobbyMekPopup {
             popup.add(menuItem("Configure...", LMP_CONFIGURE_ALL + NO_INFO + seIds, hasJoinedEntities, listener,
                   KeyEvent.VK_C));
         }
-        popup.add(menuItem("Edit Damage...", LMP_DAMAGE + NO_INFO + seIds, hasJoinedEntities, listener, KeyEvent.VK_E));
+        boolean canEditDamage = hasJoinedEntities && joinedEntities.stream()
+              .allMatch(entity -> LobbyActions.canEditDamage(clientGui.getClient(), entity));
+        JMenuItem damageItem = menuItem("Edit Damage...",
+              LMP_DAMAGE + NO_INFO + seIds,
+              canEditDamage,
+              listener,
+              KeyEvent.VK_E);
+        if (!canEditDamage) {
+            // a greyed out item with no reason is a puzzle, so say who may edit the damage of a unit
+            damageItem.setToolTipText(Messages.getString("ChatLounge.editDamage.notAllowed.tooltip"));
+        }
+        popup.add(damageItem);
         popup.add(menuItem("Set individual camo...", LMP_INDI_CAMO + NO_INFO + seIds, hasJoinedEntities, listener,
               KeyEvent.VK_I));
 
@@ -264,7 +277,19 @@ class LobbyMekPopup {
         popup.add(changeOwnerMenu(!entities.isEmpty() || !forces.isEmpty(), clientGui, listener, entities, forces));
         popup.add(loadMenu(clientGui, true, listener, joinedEntities));
         if (entities.size() == 1) {
-            popup.add(towMenu(clientGui, true, listener, entities.get(0)));
+            popup.add(towMenu(clientGui, true, listener, entities.getFirst()));
+        }
+
+        // Connecting several units at once. Offered whenever the selection could plausibly form a train; the exact
+        // ordering is chosen in the dialog and the server has the final say on legality.
+        boolean anyFreeTrailerSelected = joinedEntities.stream()
+              .anyMatch(entity -> entity.isTrailer() && (entity.getTractor() == Entity.NONE));
+        boolean anyFreeTractorSelected = joinedEntities.stream()
+              .anyMatch(entity -> entity.isTractor() && (entity.getTractor() == Entity.NONE)
+                    && (entity.getTowing() == Entity.NONE));
+        if ((joinedEntities.size() > 1) && anyFreeTrailerSelected && anyFreeTractorSelected) {
+            popup.add(menuItem(Messages.getString("ChatLounge.ConnectAsTrain"),
+                  LMP_CONNECT_TRAIN + NO_INFO + seIds, true, listener));
         }
 
         if (accessibleCarriers) {
@@ -300,14 +325,17 @@ class LobbyMekPopup {
         popup.add(menuItem("View AlphaStrike Stats", LMP_ALPHA_STRIKE + NO_INFO + seIds, true, listener));
 
         if (oneSelected) {
-            popup.add(exportEntitySpriteMenu(clientGui.getFrame(), entities.get(0)));
+            popup.add(exportEntitySpriteMenu(clientGui.getFrame(), entities.getFirst()));
         }
 
         popup.add(menuItem("Convert to SBF Formation", LMP_SBF_FORMATION + "|" + foToken(forces) + eIds,
               lobby.isForceView(), listener));
         popup.add(ScalingPopup.spacer());
+        // Enabled whenever anything is selected, forces included: the handler deletes selected forces with their
+        // units after asking, exactly as the Delete key does, so the menu must not stay greyed out in the force
+        // view while the key works.
         popup.add(menuItem("Delete", LMP_DELETE + "|" + foToken(forces) + seIds,
-              !entities.isEmpty() && forces.isEmpty(), listener, KeyEvent.VK_D));
+              !entities.isEmpty() || !forces.isEmpty(), listener, KeyEvent.VK_D));
 
         return popup;
     }
@@ -328,7 +356,7 @@ class LobbyMekPopup {
 
         // If exactly one force is selected, offer force options
         if ((forces.size() == 1) && entities.isEmpty()) {
-            Force force = forces.get(0);
+            Force force = forces.getFirst();
             boolean editable = lobby.lobbyActions.isEditable(force);
             String fId = "|" + force.getId();
             menu.add(menuItem("Add Sub force...", LMP_F_CREATE_SUB + fId + NO_INFO, editable, listener));
@@ -350,7 +378,7 @@ class LobbyMekPopup {
 
         // If exactly one force is selected, offer force options
         if ((forces.size() == 1) && entities.isEmpty()) {
-            Force force = forces.get(0);
+            Force force = forces.getFirst();
             boolean editable = lobby.lobbyActions.isEditable(force);
             menu.add(menuItem("Delete empty Force...", LMP_FC_DELETE_EMPTY + "|" + foToken(forces) + NO_INFO,
                   (editable && force.getChildCount() == 0), listener));
@@ -413,7 +441,7 @@ class LobbyMekPopup {
                               if (t.canLoad(transportedUnit)) {
                                   // FIXME #7640: Update once we can properly specify any transporter an entity has, and properly load into that transporter.
                                   loaderMenu.add(menuItem(
-                                        "Onto " + t.toString(),
+                                        "Onto " + t,
                                         LMP_LOAD + "|" + e.getId() + ":" + (Integer.MAX_VALUE
                                               - e.getTransports().indexOf(t)) + enToken(entities),
                                         true, listener));
@@ -614,6 +642,12 @@ class LobbyMekPopup {
 
             // Late deployment
             JMenu lateMenu = new JMenu("Deployment round");
+            if (Game.rulesManager.getRulesGame().isWalkOnDeployment()) {
+                lateMenu.add(menuItem(Messages.getString("ChatLounge.deploysPreGame"),
+                      LMP_DEPLOY + "|" + Entity.DEPLOY_ROUND_PRE_GAME + eIds,
+                      true,
+                      listener));
+            }
             lateMenu.add(menuItem("At game start", LMP_DEPLOY + "|0" + eIds, true, listener));
             for (int i = 1; i < 11; i++) {
                 lateMenu.add(menuItem("Before round " + i, LMP_DEPLOY + "|" + i + eIds, true, listener));
@@ -670,6 +704,11 @@ class LobbyMekPopup {
         JMenu menu = new JMenu("C3");
 
         if (entities.stream().anyMatch(Entity::hasAnyC3System)) {
+
+            // The primary entry: the manager shows the selected units and every network as a tree
+            menu.add(menuItem("Open C3 Network Manager...", LMP_C3_MANAGER + NO_INFO + enToken(entities),
+                  enabled, listener));
+            menu.addSeparator();
 
             menu.add(menuItem("Disconnect", LMP_C3DISCONNECT + NO_INFO + enToken(entities), enabled, listener));
 
@@ -735,7 +774,9 @@ class LobbyMekPopup {
                         continue;
                     }
                     int nodes = other.calculateFreeC3Nodes();
-                    if (other.hasC3MM() && entity.hasC3M() && other.C3MasterIs(other)) {
+                    if (entity.hasC3M() && other.C3MasterIs(other)) {
+                        // A master joining a company commander occupies a company-level master link, so show
+                        // that pool - also for single-computer company masters (CR p.198, Configuration 1)
                         nodes = other.calculateFreeC3MNodes();
                     }
                     if (entity.C3MasterIs(other)) {
@@ -763,8 +804,11 @@ class LobbyMekPopup {
                         menu.add(menuItem(item, LMP_C3CONNECT + "|" + other.getId() + enToken(entities), nodes != 0,
                               listener));
 
-                    } else if (other.isC3CompanyCommander() == entity.hasC3M()
-                          && !entity.isC3CompanyCommander()) {
+                    } else if (!entity.isC3CompanyCommander()
+                          && (entity.hasC3M() ? lanceRolesCompatible(game, entity, other)
+                          : other.isC3IndependentMaster())) {
+                        // Slaves connect to lance masters; masters connect to company commanders or - forming an
+                        // All-C3-Master lance (CR p.199) - to lance masters whose dependents are all masters too.
                         String item = "<HTML>Connect to " + other.getShortNameRaw() + idString(game, other.getId());
                         item += " (" + other.getC3NetId() + ")";
                         if (entity.C3MasterIs(other)) {
@@ -782,6 +826,22 @@ class LobbyMekPopup {
         }
         menu.setEnabled(enabled && menu.getItemCount() > 0);
         return menu;
+    }
+
+    /**
+     * Returns true when the joining unit's role fits the dependents already connected to the given master. A lance is
+     * homogeneous (CR p.199): all C3 Slaves, or - under the All-C3-Master rule - all C3 Masters in slave roles, so a
+     * master may not join a lance of slaves and vice versa.
+     */
+    private static boolean lanceRolesCompatible(Game game, Entity joiningUnit, Entity master) {
+        boolean joinerIsMaster = joiningUnit.hasC3M();
+        for (Entity other : game.getEntitiesVector()) {
+            if (!other.equals(master) && !other.equals(joiningUnit) && other.C3MasterIs(master)
+                  && (other.hasC3M() != joinerIsMaster)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -827,8 +887,8 @@ class LobbyMekPopup {
     }
 
     /**
-     * @return the "Equipment" submenu, allowing hot loading LRMs, setting MGs to rapid fire mode,
-     *         Variable Range Targeting mode selection, and Enhanced Imaging mode selection
+     * @return the "Equipment" submenu, allowing hot loading LRMs, setting MGs to rapid fire mode, Variable Range
+     *       Targeting mode selection, and Enhanced Imaging mode selection
      */
     private static JMenu equipMenu(boolean anyRFOn, boolean anyRFOff, boolean anyHLOn,
           boolean anyHLOff, boolean anyVRTLong, boolean anyVRTShort, boolean anyVRT,

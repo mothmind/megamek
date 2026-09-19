@@ -148,13 +148,20 @@ public class BLKProtoMekFile extends BLKFile implements IMekLoader {
 
         loadQuirks(t);
 
-        // ProtoMeks cannot shut down EI per IO:AE p.69 -- set mode to "On" (index 1)
-        for (Mounted<?> m : t.getEquipment()) {
-            if ((m.getType() instanceof MiscType) && m.getType().hasFlag(MiscType.F_EI_INTERFACE)) {
-                m.setMode(1);
+        // ProtoMeks have EI built-in per IO:AE p.69. At BLK load time, game context is not
+        // available so default to Off. The mode will be set correctly when the unit joins a
+        // game via setGameOptions().
+        for (Mounted<?> eiInterface : t.getEquipment()) {
+            if ((eiInterface.getType() instanceof MiscType)
+                  && eiInterface.getType().hasFlag(MiscType.F_EI_INTERFACE)) {
+                eiInterface.setModeImmediately(Mounted.MODE_OFF);
                 break;
             }
         }
+
+        // Recalculate tech advancement after all equipment is loaded so that ProtoMek EI
+        // is properly skipped when no game context is present (defaults to non-Full Tracking)
+        t.recalculateTechAdvancement();
 
         return t;
     }
@@ -206,7 +213,7 @@ public class BLKProtoMekFile extends BLKFile implements IMekLoader {
                 // Strip the shots out of the ammo name.
                 equipName = equipName.substring(0, ammoIndex);
             }
-            EquipmentType etype = EquipmentType.get(equipName);
+            EquipmentType etype = getEquipmentType(t, equipName);
 
             if (etype == null) {
                 // try w/ prefix

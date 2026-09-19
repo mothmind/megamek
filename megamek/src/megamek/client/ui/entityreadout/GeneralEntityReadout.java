@@ -37,6 +37,7 @@ import static megamek.client.ui.entityreadout.TableElement.JUSTIFIED_LEFT;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -52,6 +53,7 @@ import megamek.MMConstants;
 import megamek.client.ui.Messages;
 import megamek.client.ui.clientGUI.GUIPreferences;
 import megamek.client.ui.util.ViewFormatting;
+import megamek.common.SourceBook;
 import megamek.common.SourceBooks;
 import megamek.common.annotations.Nullable;
 import megamek.common.enums.TechBase;
@@ -102,6 +104,7 @@ class GeneralEntityReadout implements EntityReadout {
 
     private boolean initialized = false;
 
+    private final NumberFormat costFormatter;
     private final DecimalFormat dFormatter;
     private final List<ViewElement> headerSection = new ArrayList<>();
     private final List<ViewElement> techLevel = new ArrayList<>();
@@ -134,12 +137,15 @@ class GeneralEntityReadout implements EntityReadout {
         DecimalFormatSymbols unusualSymbols = new DecimalFormatSymbols();
         unusualSymbols.setDecimalSeparator('.');
         unusualSymbols.setGroupingSeparator(',');
+        costFormatter = NumberFormat.getInstance();
+        costFormatter.setMinimumFractionDigits(2);
+        costFormatter.setMaximumFractionDigits(2);
         dFormatter = new DecimalFormat("#,###", unusualSymbols);
     }
 
     protected List<ViewElement> createHeaderSection() {
         List<ViewElement> result = new ArrayList<>();
-        result.add(new UnitName(entity.getShortNameRaw()));
+        result.add(new UnitName(entity.getShortNameRaw(), entity.isNonCanonBySource()));
         result.add(new PlainLine(EntityReadoutUnitType.unitTypeAsString(entity)));
         return result;
     }
@@ -172,6 +178,7 @@ class GeneralEntityReadout implements EntityReadout {
         result.add(new PlainLine());
         result.add(createCostElement());
         result.add(createSourceElement());
+        result.add(createPublishedElement());
         return result;
     }
 
@@ -238,7 +245,7 @@ class GeneralEntityReadout implements EntityReadout {
                 if (!activeWeaponQuirkElements.isEmpty()) {
                     JoinedViewElement wq = new JoinedViewElement();
                     wq.add(weapon.getDesc() + " (" + entity.getLocationAbbr(weapon.getLocation()) + "): ");
-                    wq.add(activeWeaponQuirkElements.get(0));
+                    wq.add(activeWeaponQuirkElements.getFirst());
                     for (int i = 1; i < activeWeaponQuirkElements.size(); i++) {
                         wq.add(", ");
                         wq.add(activeWeaponQuirkElements.get(i));
@@ -323,7 +330,7 @@ class GeneralEntityReadout implements EntityReadout {
         double cost = (useAlternateCost && entity.getAlternateCost() > 0)
               ? entity.getAlternateCost()
               : entity.getCost(false);
-        return new LabeledLine(Messages.getString("MekView.Cost"), dFormatter.format(cost) + " C-bills");
+        return new LabeledLine(Messages.getString("MekView.Cost"), costFormatter.format(cost) + " C-bills");
     }
 
     protected ViewElement createBVElement() {
@@ -333,25 +340,84 @@ class GeneralEntityReadout implements EntityReadout {
     }
 
     protected ViewElement createSourceElement() {
-        String source = entity.getSource();
-        String sourceLabel = Messages.getString("MekView.Source");
-        var sourcebooks = new SourceBooks();
-        var book = sourcebooks.loadSourceBook(source);
-        if (book.isPresent()) {
-            if (book.get().getMul_url() != null) {
-                return new HyperLinkLine(sourceLabel, book.get().getMul_url(), book.get().getTitle());
-            } else if (book.get().getTitle() != null) {
-                source = Objects.requireNonNullElse(book.get().getTitle(), "");
-            }
+        return createSourceBookElement(Messages.getString("MekView.Source"), entity.getSource(), entity.getSources());
+    }
+
+    protected ViewElement createPublishedElement() {
+        if (entity.getPublishedSources().isEmpty()) {
+            return new EmptyElement();
+        }
+        return createSourceBookElement(Messages.getString("MekView.PublishedRecordSheet"), entity.getPublished(),
+              entity.getPublishedSources());
+    }
+
+    private ViewElement createSourceBookElement(String sourceLabel, String source, List<String> sources) {
+        if (sources.isEmpty()) {
+            return new LabeledLine(sourceLabel, Messages.getString("MekView.Unknown"));
         }
 
-        if (source.isBlank()) {
-            return new LabeledLine(sourceLabel, Messages.getString("MekView.Unknown"));
-        } else if (source.contains(MMConstants.SOURCE_TEXT_SHRAPNEL)) {
-            return new HyperLinkLine(sourceLabel, MMConstants.BT_URL_SHRAPNEL, source);
-        } else {
+        var sourcebooks = new SourceBooks();
+        if (sources.size() == 1) {
+            var book = sourcebooks.loadSourceBook(source);
+            if (book.isPresent()) {
+                SourceBook sourceBook = book.get();
+                String displaySource = sourceBookDisplayText(source, sourceBook);
+                if ((sourceBook.getMul_url() != null) && !sourceBook.getMul_url().isBlank()) {
+                    return new HyperLinkLine(sourceLabel, sourceBook.getMul_url(), displaySource);
+                } else {
+                    source = displaySource;
+                }
+            }
+
+            if (source.contains(MMConstants.SOURCE_TEXT_SHRAPNEL)) {
+                return new HyperLinkLine(sourceLabel, MMConstants.BT_URL_SHRAPNEL, source);
+            }
+
             return new LabeledLine(sourceLabel, source);
         }
+
+        JoinedViewElement displaySources = new JoinedViewElement();
+        for (String sourceName : sources) {
+            if (!displaySources.toPlainText().isEmpty()) {
+                displaySources.add(", ");
+            }
+            displaySources.add(sourcebooks.loadSourceBook(sourceName)
+                  .map(book -> sourceBookDisplayElement(sourceName, book))
+                  .orElse(new PlainElement(sourceName)));
+        }
+        return new LabeledLine(sourceLabel, displaySources);
+    }
+
+    private ViewElement sourceBookDisplayElement(String sourceName, SourceBook sourceBook) {
+        String displaySource = sourceBookDisplayText(sourceName, sourceBook);
+        if ((sourceBook.getMul_url() == null) || sourceBook.getMul_url().isBlank()) {
+            return new PlainElement(displaySource);
+        }
+
+        return new ViewElement() {
+            @Override
+            public String toPlainText() {
+                return displaySource;
+            }
+
+            @Override
+            public String toHTML() {
+                return "<A HREF=" + sourceBook.getMul_url() + ">" + displaySource + "</A>";
+            }
+
+            @Override
+            public String toDiscord() {
+                return displaySource;
+            }
+        };
+    }
+
+    private String sourceBookDisplayText(String sourceName, SourceBook sourceBook) {
+        String displaySource = Objects.requireNonNullElse(sourceBook.getTitle(), sourceName);
+        if (!sourceBook.isCanon()) {
+            displaySource += " (Non-Canon)";
+        }
+        return displaySource;
     }
 
     protected ViewElement createWeightElement() {

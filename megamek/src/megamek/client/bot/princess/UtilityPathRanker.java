@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -40,7 +40,6 @@ import static megamek.codeUtilities.MathUtility.clampUlp1;
 import java.util.List;
 import java.util.TreeSet;
 
-import megamek.codeUtilities.MathUtility;
 import megamek.common.annotations.Nullable;
 import megamek.common.board.Coords;
 import megamek.common.compute.Compute;
@@ -171,14 +170,14 @@ public class UtilityPathRanker extends BasicPathRanker {
         double braveryMod = getBraveryMod(successProbability, damageEstimate, expectedDamageTaken);
 
         var isNotAirborne = !path.getEntity().isAirborneAeroOnGroundMap();
-        // the only critters not subject to aggression and herding mods are
+        // the only critters not subject to aggression and mutual support mods are
         // airborne aeros on ground maps, as they move incredibly fast
         // The further I am from a target, the lower this path ranks
         // (weighted by Aggression slider).
         double aggressionMod = isNotAirborne ?
               calculateAggressionMod(movingUnit, pathCopy, maxRange, game) : 1.0;
         // The further I am from my teammates, the lower this path
-        // ranks (weighted by Herd Mentality).
+        // ranks (weighted by Mutual Support).
 
         double fallMod = calculateFallMod(successProbability);
 
@@ -197,7 +196,7 @@ public class UtilityPathRanker extends BasicPathRanker {
         double strategicMod = calculateStrategicGoalMod(pathCopy);
         double formationMod = calculateFormationModifier(path, maxRange);
         double exposurePenalty = calculateExposurePenalty(movingUnit, pathCopy, enemies);
-        double fallBack = shouldFallBack(pathCopy, movingUnit, enemies.get(0)) ? 0.5 : 1.0;
+        double fallBack = shouldFallBack(pathCopy, movingUnit, enemies.getFirst()) ? 0.5 : 1.0;
 
         double utility = clamp01(braveryMod * fallMod * formationMod * aggressionMod * movementMod *
               selfPreservationMod * strategicMod * exposurePenalty * fallBack * facingMod);
@@ -277,7 +276,7 @@ public class UtilityPathRanker extends BasicPathRanker {
               pathCopy.isJumping(),
               pathCopy.isAirborne(),
               game);
-        var tmmValue = MathUtility.clamp(tmm.getValue() / 8.0, 0.0, 1.0);
+        var tmmValue = Math.clamp(tmm.getValue() / 8.0, 0.0, 1.0);
         return clampUlp1(tmmValue * tmmFactor);
     }
 

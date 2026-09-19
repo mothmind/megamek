@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007 - Jay Lawson
- * Copyright (C) 2008-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2008-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -184,7 +184,8 @@ public class TeleMissile extends Aero {
     }
 
     @Override
-    public int doBattleValueCalculation(boolean ignoreC3, boolean ignoreSkill, CalculationReport calculationReport) {
+    public int doBattleValueCalculation(boolean ignoreC3, boolean ignoreSkill, boolean ignoreTAG,
+          CalculationReport calculationReport) {
         return 0;
     }
 
@@ -217,6 +218,7 @@ public class TeleMissile extends Aero {
         return roll;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public boolean isOutContact() {
         return outContact;
     }

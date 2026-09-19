@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2000-2005 Ben Mazur (bmazur@sev.org)
- * Copyright (C) 2002-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2002-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -46,18 +46,22 @@ import megamek.client.ui.Messages;
 import megamek.client.ui.clientGUI.ClientGUI;
 import megamek.client.ui.clientGUI.boardview.BoardView;
 import megamek.client.ui.clientGUI.boardview.IBoardView;
+import megamek.client.ui.clientGUI.boardview.overlay.ToastLevel;
 import megamek.client.ui.dialogs.phaseDisplay.BombPayloadDialog;
 import megamek.client.ui.dialogs.phaseDisplay.SuicideImplantsDialog;
 import megamek.client.ui.dialogs.phaseDisplay.TargetChoiceDialog;
 import megamek.client.ui.dialogs.phaseDisplay.TriggerAPPodDialog;
 import megamek.client.ui.dialogs.phaseDisplay.TriggerBPodDialog;
 import megamek.client.ui.dialogs.phaseDisplay.VibrabombSettingDialog;
+import megamek.client.ui.util.KeyBindReceiver;
 import megamek.client.ui.util.KeyCommandBind;
 import megamek.client.ui.util.MegaMekController;
 import megamek.client.ui.widget.MegaMekButton;
 import megamek.client.ui.widget.MekPanelTabStrip;
+import megamek.common.CalledShot;
 import megamek.common.Hex;
 import megamek.common.HexTarget;
+import megamek.common.IdealHex;
 import megamek.common.LosEffects;
 import megamek.common.Player;
 import megamek.common.ToHitData;
@@ -95,6 +99,12 @@ import megamek.logging.MMLogger;
 public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionListener {
     private final static MMLogger logger = MMLogger.create(FiringDisplay.class);
 
+    /**
+     * Dedicated diagnostic logger for called shots, silent unless enabled in log4j2.xml. Shared with the pointblank
+     * shot display, which inherits the called shot handling.
+     */
+    protected final static MMLogger CALLED_SHOT_LOGGER = MMLogger.create("megamek.feature.CalledShot");
+
     @Serial
     private static final long serialVersionUID = -5586388490027013723L;
 
@@ -113,17 +123,22 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         FIRE_MODE("fireMode"),
         FIRE_SPOT("fireSpot"),
         FIRE_FLIP_ARMS("fireFlipArms"),
+        FIRE_FLIP_MOUNT("fireFlipMount"),
+        FIRE_ROTATE_TURRET("fireRotateTurret"),
+        FIRE_ROTATE_TURRET_2("fireRotateTurret2"),
         FIRE_FIND_CLUB("fireFindClub"),
         FIRE_STRAFE("fireStrafe"),
         FIRE_SEARCHLIGHT("fireSearchlight"),
         FIRE_CLEAR_TURRET("fireClearTurret"),
         FIRE_CLEAR_WEAPON("fireClearWeaponJam"),
+        FIRE_EXTINGUISH("fireExtinguish"),
         FIRE_CALLED("fireCalled"),
         FIRE_CANCEL("fireCancel"),
         FIRE_ACTIVATE_SPA("fireActivateSPA"),
         FIRE_RHS("fireRHS"),
         FIRE_SUICIDE_IMPLANTS("fireSuicideImplants"),
-        FIRE_MORE("fireMore");
+        FIRE_MORE("fireMore"),
+        FIRE_CHARGE("fireCharge");
 
         final String cmd;
 
@@ -211,6 +226,9 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
                     result += "&nbsp;&nbsp;" + msg_next + ": " + KeyCommandBind.getDesc(KeyCommandBind.NEXT_MODE);
                     result += "&nbsp;&nbsp;" + msg_previous + ": " + KeyCommandBind.getDesc(KeyCommandBind.PREV_MODE);
                     break;
+                case FIRE_CALLED:
+                    result = calledShotHotKeyDesc();
+                    break;
                 case FIRE_CANCEL:
                     result = "<BR>";
                     result += "&nbsp;&nbsp;" + KeyCommandBind.getDesc(KeyCommandBind.CANCEL);
@@ -221,6 +239,24 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
 
             return result;
         }
+    }
+
+    /**
+     * Returns the tooltip fragment listing the four called shot direction binds. Shared with the pointblank shot
+     * display, which has its own copy of the firing commands.
+     */
+    static String calledShotHotKeyDesc() {
+        String result = "<BR>";
+        result += "&nbsp;&nbsp;" + Messages.getString("FiringDisplay.calledShotHigh") + ": "
+              + KeyCommandBind.getDesc(KeyCommandBind.CALLED_SHOT_HIGH);
+        result += "&nbsp;&nbsp;" + Messages.getString("FiringDisplay.calledShotLow") + ": "
+              + KeyCommandBind.getDesc(KeyCommandBind.CALLED_SHOT_LOW);
+        result += "<BR>";
+        result += "&nbsp;&nbsp;" + Messages.getString("FiringDisplay.calledShotLeft") + ": "
+              + KeyCommandBind.getDesc(KeyCommandBind.CALLED_SHOT_LEFT);
+        result += "&nbsp;&nbsp;" + Messages.getString("FiringDisplay.calledShotRight") + ": "
+              + KeyCommandBind.getDesc(KeyCommandBind.CALLED_SHOT_RIGHT);
+        return result;
     }
 
     // buttons
@@ -247,6 +283,10 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
      * Keeps track of the Coords that are in a strafing run.
      */
     private final List<Coords> strafingCoords = new ArrayList<>(5);
+
+    /** The last hex the player selected, used by the firing-phase Extinguish button. */
+    private Coords selectedCoords = null;
+    private int selectedBoardId = 0;
 
     /**
      * Creates and lays out a new firing phase display for the specified clientGUI.getClient().
@@ -291,7 +331,19 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
     }
 
     private boolean shouldPerformFireKeyCommand() {
-        return shouldReceiveKeyCommands() && buttons.get(FiringCommand.FIRE_FIRE).isEnabled();
+        return shouldReceiveKeyCommands() && isFireAllowed();
+    }
+
+    /**
+     * The called shot binds must respect the same gate as the Called button, otherwise a keypress would change called
+     * shots in games where the TacOps called shots option is switched off.
+     */
+    protected boolean shouldPerformCalledShotKeyCommand() {
+        boolean receiving = shouldReceiveKeyCommands();
+        boolean calledEnabled = buttons.get(FiringCommand.FIRE_CALLED).isEnabled();
+        CALLED_SHOT_LOGGER.debug("[CalledShot] {} gate: receivingKeyCommands={} calledButtonEnabled={}",
+              getClass().getSimpleName(), receiving, calledEnabled);
+        return receiving && calledEnabled;
     }
 
     protected void twistLeft() {
@@ -362,7 +414,25 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         controller.registerCommandAction(KeyCommandBind.VIEW_ACTING_UNIT, this, this::viewActingUnit);
         controller.registerCommandAction(KeyCommandBind.NEXT_MODE, this, () -> changeMode(true));
         controller.registerCommandAction(KeyCommandBind.PREV_MODE, this, () -> changeMode(false));
+
+        registerCalledShotKeyCommands(controller, this::shouldPerformCalledShotKeyCommand);
+
         controller.registerCommandAction(KeyCommandBind.CANCEL, this::shouldPerformClearKeyCommand, this::clear);
+    }
+
+    /**
+     * Registers the four called shot direction binds. Shared with the pointblank shot display, which gates them on its
+     * own turn check.
+     */
+    protected void registerCalledShotKeyCommands(MegaMekController controller, KeyBindReceiver shouldPerform) {
+        controller.registerCommandAction(KeyCommandBind.CALLED_SHOT_HIGH, shouldPerform,
+              () -> setCalledShot(CalledShot.CALLED_HIGH));
+        controller.registerCommandAction(KeyCommandBind.CALLED_SHOT_LOW, shouldPerform,
+              () -> setCalledShot(CalledShot.CALLED_LOW));
+        controller.registerCommandAction(KeyCommandBind.CALLED_SHOT_LEFT, shouldPerform,
+              () -> setCalledShot(CalledShot.CALLED_LEFT));
+        controller.registerCommandAction(KeyCommandBind.CALLED_SHOT_RIGHT, shouldPerform,
+              () -> setCalledShot(CalledShot.CALLED_RIGHT));
     }
 
     @Override
@@ -371,11 +441,25 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         int i = 0;
         FiringCommand[] commands = FiringCommand.values();
         CommandComparator comparator = new CommandComparator();
+        // The two turret-rotate buttons belong side by side: pin the rear button's priority to the front one's, so
+        // the stable sort keeps them adjacent regardless of any saved button-order preferences.
+        FiringCommand.FIRE_ROTATE_TURRET_2.setPriority(FiringCommand.FIRE_ROTATE_TURRET.getPriority());
         Arrays.sort(commands, comparator);
         for (FiringCommand cmd : commands) {
             if (cmd == FiringCommand.FIRE_NEXT
                   || cmd == FiringCommand.FIRE_MORE
                   || cmd == FiringCommand.FIRE_CANCEL) {
+                continue;
+            }
+            // The Directional Torso Mount (BMM p.83) is a Mek-only quirk, so other unit types never show its button.
+            if ((cmd == FiringCommand.FIRE_FLIP_MOUNT) && (currentEntity() != null)
+                  && !(currentEntity() instanceof Mek)) {
+                continue;
+            }
+            // The rear-turret rotate button exists only for dual-turret vehicles (the first rotate button then
+            // covers the front turret).
+            if ((cmd == FiringCommand.FIRE_ROTATE_TURRET_2)
+                  && !((currentEntity() instanceof Tank tank) && !tank.hasNoDualTurret())) {
                 continue;
             }
             if (i % buttonsPerGroup == 0) {
@@ -479,11 +563,18 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
 
             setFindClubEnabled(FindClubAction.canMekFindClub(game, en));
             setFlipArmsEnabled(!currentEntity().getAlreadyTwisted() && currentEntity().canFlipArms());
+            // Rebuild the button ribbon for the newly selected unit: the Flip Mount button is Mek-only, so the
+            // ribbon differs by unit type (see getButtonList()).
+            setupButtonPanel();
+            updateFlipMount();
+            updateRotateTurret();
             updateSearchlight();
             updateRHS();
             updateClearTurret();
             updateClearWeaponJam();
             updateStrafe();
+            selectedCoords = null;
+            updateExtinguish();
 
             // Hidden units can only spot
             if ((currentEntity() != null) && currentEntity().isHidden()) {
@@ -491,8 +582,11 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
                 setTwistEnabled(false);
                 setFindClubEnabled(false);
                 setFlipArmsEnabled(false);
+                setFlipMountEnabled(false);
+                setRotateTurretEnabled(false);
+                setRotateRearTurretEnabled(false);
                 setStrafeEnabled(false);
-                clientgui.getUnitDisplay().wPan.setToHit("Hidden units are only allowed to spot!");
+                clientgui.getUnitDisplay().wPan.setToHit(Messages.getString("FiringDisplay.HiddenUnitMaySpot"));
             }
         } else {
             logger.error("Tried to select non-existent entity {}", en);
@@ -529,7 +623,7 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
                 addAttack(actions.nextElement());
             }
             ready();
-        } else if ((turn instanceof TriggerBPodTurn) && (null != currentEntity())) {
+        } else if ((turn instanceof TriggerBPodTurn) && (currentEntity() != null)) {
             disableButtons();
             TriggerBPodDialog dialog = new TriggerBPodDialog(clientgui, currentEntity(),
                   ((TriggerBPodTurn) turn).getAttackType());
@@ -595,11 +689,16 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         butSkipTurn.setEnabled(false);
         setNextTargetEnabled(false);
         setFlipArmsEnabled(false);
+        setFlipMountEnabled(false);
+        setRotateTurretEnabled(false);
+        setRotateRearTurretEnabled(false);
         setFireModeEnabled(false);
         setFireCalledEnabled(false);
         setFireClearTurretEnabled(false);
         setFireClearWeaponJamEnabled(false);
+        setFireExtinguishEnabled(false);
         setStrafeEnabled(false);
+        setFireChargeLevelEnabled(false);
     }
 
     /**
@@ -627,7 +726,8 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
               && (weaponMounted.getType() instanceof WeaponType)
               && weaponMounted.getType().hasFlag(WeaponType.F_BA_INDIVIDUAL)
               && (weaponMounted.curMode().getName().contains("-shot"))
-              && (Integer.parseInt(weaponMounted.curMode().getName().replace("-shot", "")) > currentEntity().getTotalInternal())) {
+              && (Integer.parseInt(weaponMounted.curMode().getName().replace("-shot", ""))
+              > currentEntity().getTotalInternal())) {
             weaponMounted.setMode(0);
         }
         clientgui.getClient().sendModeChange(weaponMounted.getEntity().getId(), weaponMounted.getEquipmentNum(), nMode);
@@ -647,28 +747,92 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
     }
 
     /**
-     * Called Shots - changes the current called shots selection
+     * Charge Mode - Adds a Charge Mode Change to the current Attack Action
      */
-    protected void changeCalled() {
-        int wn = clientgui.getUnitDisplay().wPan.getSelectedWeaponNum();
+    protected void changeChargeLevel() {
+        WeaponMounted weaponMounted = clientgui.getUnitDisplay().wPan.getSelectedWeapon();
 
-        // Do nothing we have no unit selected.
-        if (currentEntity() == null) {
-            return;
-        }
-
-        Mounted<?> m = currentEntity().getEquipment(wn);
-        if (m == null) {
+        // Do nothing we have no unit selected or no weapon selected or if the weapon is not a bombast laser
+        if (currentEntity() == null || weaponMounted == null || !weaponMounted.getType().hasFlag(WeaponType.F_BOMBAST_LASER)) {
             return;
         }
 
         // send change to the server
-        m.getCalledShot().switchCalledShot();
-        clientgui.getClient().sendCalledShotChange(currentEntity, wn);
+        int nChargeLevel = weaponMounted.switchChargeLevel();
+
+        clientgui.getClient().sendChargeLevelChange(weaponMounted.getEntity().getId(), weaponMounted.getEquipmentNum(),
+              nChargeLevel);
+
+        // notify the player
+        clientgui.systemMessage(Messages.getString("FiringDisplay.switched", weaponMounted.getName(),
+                  weaponMounted.getChargeState().getDescription()));
 
         updateTarget();
         clientgui.getUnitDisplay().wPan.displayMek(currentEntity());
-        clientgui.getUnitDisplay().wPan.selectWeapon(wn);
+        clientgui.getUnitDisplay().wPan.selectWeapon(weaponMounted);
+    }
+
+    /**
+     * Called Shots - changes the current called shots selection
+     */
+    protected void changeCalled() {
+        int weaponNum = clientgui.getUnitDisplay().wPan.getSelectedWeaponNum();
+        Mounted<?> mounted = selectedEquipment(weaponNum);
+        if (mounted == null) {
+            return;
+        }
+
+        applyCalledShot(weaponNum, mounted.getCalledShot().switchCalledShot());
+    }
+
+    /**
+     * Called Shots - sets the called shot of the selected weapon to the given location instead of cycling to it.
+     * Pressing the keybind for the location that is already selected clears the called shot, so all five states are
+     * reachable from the four direction binds.
+     *
+     * @param calledShot one of the {@link CalledShot} CALLED_ constants, e.g. {@link CalledShot#CALLED_HIGH}
+     */
+    protected void setCalledShot(int calledShot) {
+        int weaponNum = clientgui.getUnitDisplay().wPan.getSelectedWeaponNum();
+        Mounted<?> mounted = selectedEquipment(weaponNum);
+        if (mounted == null) {
+            CALLED_SHOT_LOGGER.debug("[CalledShot] no weapon to change: currentEntity={} selectedWeaponNum={}",
+                  (currentEntity() == null) ? "none" : currentEntity().getShortName(), weaponNum);
+            return;
+        }
+
+        CalledShot currentCall = mounted.getCalledShot();
+        int previousCall = currentCall.getCall();
+        int newCall = (previousCall == calledShot) ? CalledShot.CALLED_NONE : calledShot;
+        currentCall.setCall(newCall);
+        CALLED_SHOT_LOGGER.debug("[CalledShot] {} weapon {} ({}): requested={} previous={} new={}",
+              currentEntity().getShortName(), weaponNum, mounted.getName(), calledShot,
+              previousCall, newCall);
+
+        applyCalledShot(weaponNum, newCall);
+    }
+
+    /**
+     * Returns the equipment with the given number on the current unit.
+     *
+     * @param weaponNum the equipment number selected in the unit display weapon list
+     *
+     * @return the equipment, or {@code null} when there is no current unit or it has no such equipment
+     */
+    private @Nullable Mounted<?> selectedEquipment(int weaponNum) {
+        return (currentEntity() == null) ? null : currentEntity().getEquipment(weaponNum);
+    }
+
+    /**
+     * Sends the already-applied called shot to the server and refreshes the weapon display so the new call and its
+     * to-hit are shown.
+     */
+    private void applyCalledShot(int weaponNum, int newCall) {
+        clientgui.getClient().sendCalledShotChange(currentEntity, weaponNum, newCall);
+
+        updateTarget();
+        clientgui.getUnitDisplay().wPan.displayMek(currentEntity());
+        clientgui.getUnitDisplay().wPan.selectWeapon(weaponNum);
     }
 
     /**
@@ -825,6 +989,18 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             }
         }
 
+        String dishonorWarning = needNagForDishonor() ? HonorNagHelper.warningFor(game, attacks) : null;
+        if (dishonorWarning != null) {
+            // confirm this action
+            String title = Messages.getString("HonorNag.title");
+            String body = dishonorWarning;
+            if (checkNagForDishonor(title, body)) {
+                return true;
+            }
+            // Player accepted; remember it so the rest of this turn isn't re-warned before the bot's report arrives.
+            HonorNagHelper.recordDishonor(game, attacks);
+        }
+
         return currentEntity() == null;
     }
 
@@ -964,7 +1140,7 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             return;
         }
 
-        ArrayList<Mounted<?>> weapons = ((Tank) currentEntity).getJammedWeapons();
+        List<Mounted<?>> weapons = jammedWeaponsOf(currentEntity);
         String[] names = new String[weapons.size()];
         for (int loop = 0; loop < names.length; loop++) {
             names[loop] = weapons.get(loop).getDesc();
@@ -1326,12 +1502,19 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         // set the weapon as used
         mounted.setUsedThisRound(true);
 
-        // find the next available weapon
-        WeaponMounted nextWeapon = clientgui.getUnitDisplay().wPan.getNextWeapon();
+        // find the next available weapon. A solo-attack weapon (e.g. the fire extinguisher) is the unit's
+        // only attack this turn, so don't advance to other weapons - doing so would show a confusing
+        // "already firing a weapon that can only be fired by itself" message for a weapon the player never
+        // tried to fire.
+        WeaponMounted nextWeapon = mounted.getType().hasFlag(WeaponType.F_SOLO_ATTACK)
+              ? null
+              : clientgui.getUnitDisplay().wPan.getNextWeapon();
 
         // we fired a weapon, can't clear turret jams or weapon jams anymore
         updateClearTurret();
         updateClearWeaponJam();
+        // an attack was declared, so firefighting is no longer available this phase
+        updateExtinguish();
 
         // check; if there are no ready weapons, you're done.
         if ((nextWeapon == null)) {
@@ -1422,9 +1605,8 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         }
 
         if (currentEntity().isINarcedWith(INarcPod.HAYWIRE)) {
-            String title = Messages.getString("FiringDisplay.CantSpotDialog.title");
-            String body = Messages.getString("FiringDisplay.CantSpotDialog.message");
-            clientgui.doAlertDialog(title, body);
+            clientgui.addToast(ToastLevel.WARNING,
+                  Messages.getString("FiringDisplay.CantSpotDialog.message"), currentEntity());
             return;
         }
         // confirm this action
@@ -1439,6 +1621,7 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
     /**
      * Removes all current fire
      */
+    @Override
     protected void clearAttacks() {
         isStrafing = false;
         strafingCoords.clear();
@@ -1614,7 +1797,10 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         // allow spotting
         if ((attacker != null) && !attacker.isSpotting() && attacker.canSpot() && (target != null)
               && game.getOptions().booleanOption(OptionsConstants.BASE_INDIRECT_FIRE)) {
-            boolean hasLos = LosEffects.calculateLOS(game, attacker, target).canSee();
+            // Spotting LOS: pass spotting=true so a VTOL Mast Mount's +1 sensor elevation is
+            // applied (TacOps). This matches the server-side spot resolution and lets a mast-mount
+            // VTOL hovering behind cover enable the Spot button. Non-mast units are unaffected.
+            boolean hasLos = LosEffects.calculateLOS(game, attacker, target, true).canSee();
             // In double-blind, we need to "spot" the target as well as LoS
             if (hasLos
                   && game.getOptions().booleanOption(OptionsConstants.ADVANCED_DOUBLE_BLIND)
@@ -1717,12 +1903,22 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             setFireModeEnabled(false);
         }
 
+        WeaponMounted wm = clientgui.getUnitDisplay().wPan.getSelectedWeapon();
+        if ((clientgui.getDisplayedUnit() !=null) && (wm != null) && clientgui.getDisplayedUnit().equals(attacker) &&
+            wm.getType().hasFlag(WeaponType.F_BOMBAST_LASER)) {
+            setFireChargeLevelEnabled(true);
+        } else {
+            setFireChargeLevelEnabled(false);
+        }
+
         updateSearchlight();
         updateRHS();
         updateActivateSPA();
         updateSuicideImplants();
         updateClearWeaponJam();
         updateClearTurret();
+        updateFlipMount();
+        updateRotateTurret();
 
         // Hidden units can only spot
         if ((attacker != null) && attacker.isHidden()) {
@@ -1731,7 +1927,7 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             setFindClubEnabled(false);
             setFlipArmsEnabled(false);
             setStrafeEnabled(false);
-            clientgui.getUnitDisplay().wPan.setToHit("Hidden units are only allowed to spot!");
+            clientgui.getUnitDisplay().wPan.setToHit(Messages.getString("FiringDisplay.HiddenUnitMaySpot"));
         }
     }
 
@@ -1787,10 +1983,22 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
 
     private void addTorsoTwistAction(int direction) {
         if (direction != currentEntity().getSecondaryFacing()) {
+            // Keep the player's selected weapon selected across the twist; updateForNewAction() -> refreshAll()
+            // would otherwise jump the weapon list back to the first weapon.
+            WeaponMounted selectedWeapon = clientgui.getUnitDisplay().wPan.getSelectedWeapon();
+            // A Directional Torso Mount arc (BMM p.83) is declared independently of the twist, so preserve it:
+            // clearAttacks() would otherwise drop the mount facing action while rebuilding the attacks.
+            List<DirectionalMountFacingAction> mountFacings = pendingDirectionalMountFacings(NO_EXCLUDED_LOCATION);
             clearAttacks();
             addAttack(new TorsoTwistAction(currentEntity, direction));
             currentEntity().setSecondaryFacing(direction);
+            for (DirectionalMountFacingAction mountFacing : mountFacings) {
+                addAttack(mountFacing);
+            }
             updateForNewAction();
+            if (selectedWeapon != null) {
+                clientgui.getUnitDisplay().wPan.selectWeapon(selectedWeapon);
+            }
         }
     }
 
@@ -1811,13 +2019,10 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
                 updateFlipArms(false);
                 torsoTwist(event.getCoords());
             }
-            event.getBoardView().cursor(event.getCoords());
         } else if (event.getType() == BoardViewEvent.BOARD_HEX_CLICKED) {
             twisting = false;
-            if (!event.isShiftHeld()) {
-                event.getBoardView().select(event.getCoords());
-            }
         }
+        applyHexMouseAction(event, event.isShiftHeld());
     }
 
     @Override
@@ -1828,12 +2033,21 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
 
         Coords coords = event.getCoords();
         if (isMyTurn() && (coords != null) && (currentEntity() != null)) {
+            // Remember the clicked hex so the Extinguish button can act on it, even when the hex holds no
+            // normal target (a bare burning hex) or is the unit's own hex. Done for any click so the button
+            // never acts on a stale, previously-selected hex.
+            selectedCoords = coords;
+            selectedBoardId = event.getBoardId();
+            updateExtinguish();
             if (isStrafing) {
                 if (currentEntity().getPassedThroughBoardId() == event.getBoardId()) {
-                    strafingCoords.clear();
-                    strafingCoords.addAll(getStrafingCoords(coords));
-                    event.getBoardView().setStrafingCoords(strafingCoords);
-                    updateStrafingTargets();
+                    if (isValidStrafingHex(coords)) {
+                        strafingCoords.add(coords);
+                        // Re-sync the board view from the authoritative list; setStrafingCoords repaints the
+                        // strafing overlay, whereas addStrafingCoords would only append without a repaint.
+                        event.getBoardView().setStrafingCoords(strafingCoords);
+                        updateStrafingTargets();
+                    }
                 }
             } else if (!coords.equals(currentEntity().getPosition())) {
                 // HACK : sometimes we don't show the target choice window
@@ -1969,9 +2183,17 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             jumpToTarget(true, onlyValidTargets, ignoreAllies);
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_FLIP_ARMS.getCmd())) {
             updateFlipArms(!currentEntity().getArmsFlipped());
+        } else if (ev.getActionCommand().equals(FiringCommand.FIRE_FLIP_MOUNT.getCmd())) {
+            flipDirectionalMount();
+        } else if (ev.getActionCommand().equals(FiringCommand.FIRE_ROTATE_TURRET.getCmd())) {
+            rotateSelectedMount();
+        } else if (ev.getActionCommand().equals(FiringCommand.FIRE_ROTATE_TURRET_2.getCmd())) {
+            rotateRearTurret();
             // Fire Mode - More Fire Mode button handling - Rasia
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_MODE.getCmd())) {
             changeMode(true);
+        } else if (ev.getActionCommand().equals(FiringCommand.FIRE_CHARGE.getCmd())) {
+            changeChargeLevel();
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_CALLED.getCmd())) {
             changeCalled();
         } else if (("changeSinks".equalsIgnoreCase(ev.getActionCommand()))
@@ -1983,6 +2205,8 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
             doClearTurret();
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_CLEAR_WEAPON.getCmd())) {
             doClearWeaponJam();
+        } else if (ev.getActionCommand().equals(FiringCommand.FIRE_EXTINGUISH.getCmd())) {
+            extinguish();
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_STRAFE.getCmd())) {
             startStrafe();
         } else if (ev.getActionCommand().equals(FiringCommand.FIRE_ACTIVATE_SPA.getCmd())) {
@@ -2017,6 +2241,27 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         refreshAll();
     }
 
+    /**
+     * Refreshes the firing-phase target panel after a Directional Torso Mount arc change. See
+     * {@link AttackPhaseDisplay#flipDirectionalMount()}, which drives the shared flip logic.
+     */
+    @Override
+    protected void refreshTargetAfterMountChange() {
+        updateTarget();
+    }
+
+    /**
+     * Declares a torso/turret twist to the given facing through the firing-phase twist path, used by the Rotate Turret
+     * dialog for vehicle main turrets. See {@link AttackPhaseDisplay#rotateSelectedMount()}.
+     */
+    @Override
+    protected void declareSecondaryFacing(int facing) {
+        if ((currentEntity() == null) || currentEntity().getAlreadyTwisted()) {
+            return;
+        }
+        addTorsoTwistAction(currentEntity().clipSecondaryFacing(facing));
+    }
+
     protected void updateSearchlight() {
         setSearchlightEnabled(
               (currentEntity() != null)
@@ -2036,8 +2281,85 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
     }
 
     private void updateClearWeaponJam() {
-        setFireClearWeaponJamEnabled((currentEntity() instanceof Tank) && ((Tank) currentEntity()).canUnjamWeapon()
-              && attacks.isEmpty());
+        setFireClearWeaponJamEnabled(canClearWeaponJam(currentEntity()) && attacks.isEmpty());
+    }
+
+    /** A vehicle crew (TW p. 195) or the gunners of an Advanced Building (TO:AR p. 119) may clear a jammed weapon. */
+    private static boolean canClearWeaponJam(@Nullable Entity entity) {
+        return switch (entity) {
+            case Tank tank -> tank.canUnjamWeapon();
+            case AbstractBuildingEntity building -> building.canUnjamWeapon();
+            case null, default -> false;
+        };
+    }
+
+    private static List<Mounted<?>> jammedWeaponsOf(Entity entity) {
+        return switch (entity) {
+            case Tank tank -> new ArrayList<>(tank.getJammedWeapons());
+            case AbstractBuildingEntity building -> building.getJammedWeapons();
+            default -> new ArrayList<>();
+        };
+    }
+
+    private void updateExtinguish() {
+        setFireExtinguishEnabled(canExtinguishSelectedHex());
+    }
+
+    /**
+     * @return {@code true} if the current unit can extinguish the hex the player has selected: the unit is a
+     *       firefighting engineer or carries a ready fire extinguisher, it has not already declared an attack this
+     *       phase, and the selected hex is burning (and adjacent, for firefighting engineers).
+     */
+    private boolean canExtinguishSelectedHex() {
+        Entity firingUnit = currentEntity();
+        if ((firingUnit == null) || !attacks.isEmpty() || (selectedCoords == null)) {
+            return false;
+        }
+        boolean firefighter = firingUnit.isFirefighter();
+        if (!firefighter && !hasReadyFireExtinguisher(firingUnit)) {
+            return false;
+        }
+        // The hex must be on the unit's own board; a hex on a different board is never reachable.
+        if (firingUnit.getBoardId() != selectedBoardId) {
+            return false;
+        }
+        Hex hex = game.getBoard(selectedBoardId).getHex(selectedCoords);
+        if ((hex == null) || !hex.containsTerrain(Terrains.FIRE)) {
+            return false;
+        }
+        if (firingUnit.getPosition() == null) {
+            return false;
+        }
+        int distanceToHex = firingUnit.getPosition().distance(selectedCoords);
+        // Firefighting engineers fight an adjacent hex, not the one they stand in (TO:AuE p.153). Other units use a
+        // range-1 Fire Extinguisher weapon, which reaches only their own hex or an adjacent one.
+        return firefighter ? (distanceToHex == 1) : (distanceToHex <= 1);
+    }
+
+    private boolean hasReadyFireExtinguisher(Entity entity) {
+        return entity.getWeaponList().stream()
+              .anyMatch(weapon -> weapon.getType().hasFlag(WeaponType.F_EXTINGUISHER) && !weapon.isUsedThisRound());
+    }
+
+    /**
+     * Declares an attack to extinguish the fire in the player-selected hex, using a carried fire extinguisher weapon if
+     * present, otherwise the firefighting engineers' own gear. This consumes the unit's attack (TO:AuE p.153 -
+     * firefighting is done in place of a weapon attack).
+     */
+    private void extinguish() {
+        if (!canExtinguishSelectedHex()) {
+            return;
+        }
+        // Prefer a real fire extinguisher weapon (coolant trucks, etc.); firefighting engineers use their
+        // currently selected weapon, which their FIRE_ENGINEERS specialization routes to the extinguisher path.
+        for (WeaponMounted weapon : currentEntity().getWeaponList()) {
+            if (weapon.getType().hasFlag(WeaponType.F_EXTINGUISHER) && !weapon.isUsedThisRound()) {
+                clientgui.getUnitDisplay().wPan.selectWeapon(weapon);
+                break;
+            }
+        }
+        target(new HexTarget(selectedCoords, selectedBoardId, Targetable.TYPE_HEX_EXTINGUISH));
+        fire();
     }
 
     private void updateStrafe() {
@@ -2145,49 +2467,106 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         updateRHS();
     }
 
+    /**
+     * Enables or disables one firing button and its menu item.
+     *
+     * <p>The button may be absent. {@link PointblankShotDisplay} declares its own command set and its own button
+     * map, so this map is never filled in for it; it overrides the setters for the buttons it has and inherits the
+     * rest, which have no button to enable. Reaching straight into the map threw instead: firing a point-blank shot
+     * crashed on the Fire button, because disabling the buttons ran through a command that display does not carry.</p>
+     *
+     * @param command the button to change
+     * @param enabled whether it should be usable
+     */
+    private void enableFiringButton(FiringCommand command, boolean enabled) {
+        if (buttons != null) {
+            MegaMekButton button = buttons.get(command);
+            if (button != null) {
+                button.setEnabled(enabled);
+            }
+        }
+        clientgui.getMenuBar().setEnabled(command.getCmd(), enabled);
+    }
+
     protected void setFireEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_FIRE).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_FIRE.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_FIRE, enabled);
+    }
+
+    /**
+     * Returns whether an attack may currently be declared with the selected weapon against the current target. This is
+     * the gate the Fire button itself uses; {@link #updateTarget()} recomputes it whenever the target, the selected
+     * weapon or the attacker's state changes, and the reason for a refusal is shown as the to-hit text in the unit
+     * display.
+     * <p>
+     * Every other way of firing - the hotkey and the board's right-click menu - must respect this gate. Bypassing it
+     * declares attacks the rules forbid, such as a conventional infantry platoon adding a Swarm or Leg Attack after it
+     * has already fired its primary weapons, which makes the server reject both attacks.
+     *
+     * @return {@code true} if firing the selected weapon is currently allowed
+     */
+    public boolean isFireAllowed() {
+        if (buttons == null) {
+            return false;
+        }
+        MegaMekButton fireButton = buttons.get(FiringCommand.FIRE_FIRE);
+        return (fireButton != null) && fireButton.isEnabled();
     }
 
     protected void setTwistEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_TWIST).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_TWIST.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_TWIST, enabled);
     }
 
     protected void setSkipEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_SKIP).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_SKIP.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_SKIP, enabled);
     }
 
     protected void setFindClubEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_FIND_CLUB).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_FIND_CLUB.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_FIND_CLUB, enabled);
     }
 
     protected void setNextTargetEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_NEXT_TARG).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_NEXT_TARG.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_NEXT_TARG, enabled);
     }
 
     protected void setFlipArmsEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_FLIP_ARMS).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_FLIP_ARMS.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_FLIP_ARMS, enabled);
+    }
+
+    @Override
+    protected void setFlipMountEnabled(boolean enabled) {
+        enableFiringButton(FiringCommand.FIRE_FLIP_MOUNT, enabled);
+    }
+
+    @Override
+    protected void setRotateTurretEnabled(boolean enabled) {
+        enableFiringButton(FiringCommand.FIRE_ROTATE_TURRET, enabled);
+    }
+
+    @Override
+    protected void setRotateRearTurretEnabled(boolean enabled) {
+        enableFiringButton(FiringCommand.FIRE_ROTATE_TURRET_2, enabled);
+    }
+
+    @Override
+    protected void setRotateTurretLabel(boolean dualTurretTank) {
+        buttons.get(FiringCommand.FIRE_ROTATE_TURRET).setText(Messages.getString(
+              dualTurretTank ? "FiringDisplay.fireRotateTurretFront" : "FiringDisplay.fireRotateTurret"));
     }
 
     protected void setSpotEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_SPOT).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_SPOT.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_SPOT, enabled);
     }
 
     protected void setSearchlightEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_SEARCHLIGHT).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_SEARCHLIGHT.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_SEARCHLIGHT, enabled);
     }
 
     protected void setFireModeEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_MODE).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_MODE.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_MODE, enabled);
+    }
+
+    protected void setFireChargeLevelEnabled(boolean enabled) {
+        enableFiringButton(FiringCommand.FIRE_CHARGE, enabled);
     }
 
     /**
@@ -2198,46 +2577,65 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
      */
     protected void adaptFireModeEnabled(Mounted<?> m) {
         setFireModeEnabled(m.isModeSwitchable() && m.hasModes());
+        updateFireModeTooltip(m);
+    }
+
+    /**
+     * Refreshes the Mode button tooltip for the selected weapon. Most weapons keep the generic tooltip, but the Fire
+     * Extinguisher carried by firefighting engineers gets extra helper text explaining its Firefight/Support modes
+     * (TO:AuE p.153), since the choice of which platoon rolls is not otherwise obvious from the button.
+     *
+     * @param weapon the currently selected weapon
+     */
+    private void updateFireModeTooltip(Mounted<?> weapon) {
+        MegaMekButton modeButton = buttons.get(FiringCommand.FIRE_MODE);
+        String tooltip = createToolTip(FiringCommand.FIRE_MODE.getCmd(), "FiringDisplay.",
+              FiringCommand.FIRE_MODE.getHotKeyDesc());
+        if (weapon.getType().hasFlag(WeaponType.F_EXTINGUISHER)) {
+            String helper = Messages.getString("FiringDisplay.fireMode.extinguisher.tooltip");
+            if (tooltip.contains("</BODY>")) {
+                tooltip = tooltip.replace("</BODY>", "<BR>" + helper + "</BODY>");
+            } else {
+                tooltip = "<HTML><BODY>" + helper + "</BODY></HTML>";
+            }
+        }
+        modeButton.setToolTipText(tooltip);
     }
 
     protected void setFireCalledEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_CALLED).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_CALLED.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_CALLED, enabled);
     }
 
     protected void setFireClearTurretEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_CLEAR_TURRET).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_CLEAR_TURRET.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_CLEAR_TURRET, enabled);
     }
 
     protected void setFireClearWeaponJamEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_CLEAR_WEAPON).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_CLEAR_WEAPON.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_CLEAR_WEAPON, enabled);
+    }
+
+    protected void setFireExtinguishEnabled(boolean enabled) {
+        enableFiringButton(FiringCommand.FIRE_EXTINGUISH, enabled);
     }
 
     protected void setStrafeEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_STRAFE).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_STRAFE.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_STRAFE, enabled);
     }
 
     protected void setNextEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_NEXT).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_NEXT.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_NEXT, enabled);
     }
 
     protected void setActivateSPAEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_ACTIVATE_SPA).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_ACTIVATE_SPA.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_ACTIVATE_SPA, enabled);
     }
 
     protected void setRHSEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_RHS).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_RHS.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_RHS, enabled);
     }
 
     protected void setSuicideImplantsEnabled(boolean enabled) {
-        buttons.get(FiringCommand.FIRE_SUICIDE_IMPLANTS).setEnabled(enabled);
-        clientgui.getMenuBar().setEnabled(FiringCommand.FIRE_SUICIDE_IMPLANTS.getCmd(), enabled);
+        enableFiringButton(FiringCommand.FIRE_SUICIDE_IMPLANTS, enabled);
     }
 
     @Override
@@ -2395,7 +2793,7 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
         // Do we have a single choice?
         if (targets.size() == 1) {
             // Return that choice.
-            choice = targets.get(0);
+            choice = targets.getFirst();
         } else if (targets.size() > 1) {
             // If we have multiple choices, display a selection dialog.
             choice = TargetChoiceDialog.showSingleChoiceDialog(clientgui.getFrame(),
@@ -2413,70 +2811,93 @@ public class FiringDisplay extends AttackPhaseDisplay implements ListSelectionLi
     }
 
     /**
-     * Determines the five (or fewer in case the flight path is shorter than 5 hexes) hexes on the flight path of the
-     * current entity centered around the given coord, if possible. In case of a flight path that crosses itself, the
-     * player may select which of the hexes to use.
+     * Determines whether the given hex may be added to the current strafing selection. Per the strafing rules
+     * (Total Warfare / Tactical Operations), a strafing run covers one to five consecutive hexes that were flown
+     * over and that lie in a single straight line. Hexes are selected one at a time, so the player may stop at any
+     * count from one to five. The reason for any rejection is logged so playtests can diagnose it from the log.
      *
-     * @param center The middle hex of the strafing path
+     * @param newCoords The hex the player clicked to add to the strafing run
      *
-     * @return The up to five coords that make up a strafing path
+     * @return {@code true} if the hex extends a legal 1-to-5 hex straight strafing line, otherwise {@code false}
      */
-    private List<Coords> getStrafingCoords(Coords center) {
+    private boolean isValidStrafingHex(Coords newCoords) {
         Entity strafingAero = currentEntity();
 
         if ((strafingAero == null) || !strafingAero.isAero()) {
-            return Collections.emptyList();
+            logger.debug("[Strafe] Rejecting hex {}: current unit is not an aero", newCoords);
+            return false;
         }
 
         // Can't update strafe hexes after weapons are fired, otherwise we'd
         // have to have a way to update the attacks vector
         if (!attacks.isEmpty()) {
-            return Collections.emptyList();
+            logger.debug("[Strafe] Rejecting hex {}: weapons already fired this strafing run", newCoords);
+            return false;
         }
 
         // Can only strafe hexes that were flown over
-        if (!strafingAero.passedThrough(center)) {
-            return Collections.emptyList();
+        if (!strafingAero.passedThrough(newCoords)) {
+            logger.debug("[Strafe] Rejecting hex {}: not on the flight path", newCoords);
+            return false;
         }
 
-        // Path could hit the same hex multiple times with aero on ground maps, find all such hexes
-        List<Integer> centerCandidates = new ArrayList<>();
-        List<Coords> flightPath = strafingAero.getPassedThrough();
-        for (int index = 0; index < flightPath.size(); index++) {
-            if (center.equals(flightPath.get(index))) {
-                centerCandidates.add(index);
+        // No further limitations for the first hex of the run
+        if (strafingCoords.isEmpty()) {
+            return true;
+        }
+
+        // A strafing run covers at most five hexes
+        if (strafingCoords.size() >= 5) {
+            logger.debug("[Strafe] Rejecting hex {}: already at the five-hex maximum", newCoords);
+            return false;
+        }
+
+        // The same hex cannot be strafed twice in one run
+        if (strafingCoords.contains(newCoords)) {
+            logger.debug("[Strafe] Rejecting hex {}: hex already selected", newCoords);
+            return false;
+        }
+
+        // The new hex must be adjacent to an already-selected hex (consecutive)
+        boolean isConsecutive = false;
+        for (Coords selected : strafingCoords) {
+            isConsecutive |= (selected.distance(newCoords) == 1);
+        }
+        if (!isConsecutive) {
+            logger.debug("[Strafe] Rejecting hex {}: not adjacent to the current selection", newCoords);
+            return false;
+        }
+
+        // All selected hexes plus the new one must lie in a single straight line
+        if (!isInStraightLine(newCoords)) {
+            logger.debug("[Strafe] Rejecting hex {}: would break the straight line", newCoords);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Checks that every already-selected strafing hex lies on the straight line formed by the first selected hex
+     * and the candidate hex. With fewer than two hexes already selected any single addition is trivially linear.
+     *
+     * @param newCoords The candidate hex being added to the strafing run
+     *
+     * @return {@code true} if the resulting set of hexes stays in one straight line, otherwise {@code false}
+     */
+    private boolean isInStraightLine(Coords newCoords) {
+        if (strafingCoords.size() < 2) {
+            return true;
+        }
+        IdealHex newHex = IdealHex.get(newCoords);
+        IdealHex start = IdealHex.get(strafingCoords.getFirst());
+        for (int index = 1; index < strafingCoords.size(); index++) {
+            IdealHex selectedHex = IdealHex.get(strafingCoords.get(index));
+            if (!selectedHex.isIntersectedBy(start.cx, start.cy, newHex.cx, newHex.cy)) {
+                return false;
             }
         }
-
-        int centerIndex;
-        if (centerCandidates.isEmpty()) {
-            // shouldn't happen here, but be safe
-            return Collections.emptyList();
-
-        } else if (centerCandidates.size() == 1) {
-            centerIndex = centerCandidates.get(0);
-
-        } else {
-            // incomplete: choose one of the candidates
-            centerIndex = (int) JOptionPane.showInputDialog(clientgui.getFrame(),
-                  "Choose the hex to center the strafing path on",
-                  "Strafing - Choose Hex", JOptionPane.QUESTION_MESSAGE, null,
-                  centerCandidates.toArray(), centerCandidates.get(0));
-        }
-
-        // When the flight path is shorter than 5 hexes, only that many can be strafed (may happen for aeros that are
-        // not on the ground board)
-        int maxStrafingHexes = Math.min(flightPath.size(), 5);
-        int startIndex = Math.max(centerIndex - 2, 0);
-        startIndex = Math.min(flightPath.size() - 5, startIndex);
-        startIndex = Math.max(startIndex, 0);
-        List<Coords> strafingPath = new ArrayList<>();
-        for (int index = startIndex; index < startIndex + maxStrafingHexes; index++) {
-            if (flightPath.size() > index) {
-                strafingPath.add(flightPath.get(index));
-            }
-        }
-        return strafingPath;
+        return true;
     }
 
     private void incrementInternalBombs(WeaponAttackAction waa) {

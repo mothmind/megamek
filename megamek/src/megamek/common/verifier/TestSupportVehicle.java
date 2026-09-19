@@ -191,7 +191,7 @@ public class TestSupportVehicle extends TestEntity {
         public static double getBaseChassisValue(Entity supportVehicle) {
             SVType type = getVehicleType(supportVehicle);
 
-            if (null != type) {
+            if (type != null) {
                 return type.getBaseChassisValue(supportVehicle.getWeightClass());
             }
 
@@ -225,7 +225,7 @@ public class TestSupportVehicle extends TestEntity {
         public static double getBaseEngineValue(Entity supportVehicle) {
             SVType type = getVehicleType(supportVehicle);
 
-            if (null != type) {
+            if (type != null) {
                 return type.getBaseEngineValue(supportVehicle.getWeightClass());
             }
 
@@ -251,8 +251,8 @@ public class TestSupportVehicle extends TestEntity {
     }
 
     /**
-     * Additional construction data for chassis mods, used to determine whether they are legal for particular units.
-     * TM p.122
+     * Additional construction data for chassis mods, used to determine whether they are legal for particular units. TM
+     * p.122
      */
     public enum ChassisModification implements ITechnologyDelegator {
         AMPHIBIOUS(1.75, EquipmentTypeLookup.AMPHIBIOUS_CHASSIS_MOD,
@@ -451,7 +451,7 @@ public class TestSupportVehicle extends TestEntity {
          */
         public @Nullable
         static SVEngine getEngineType(Engine engine) {
-            if (null != engine) {
+            if (engine != null) {
                 for (SVEngine svEngine : values()) {
                     if (svEngine.engine.getEngineType() == engine.getEngineType()) {
                         return svEngine;
@@ -585,7 +585,7 @@ public class TestSupportVehicle extends TestEntity {
     public static int maxArmorFactor(Entity vee) {
         SVType type = SVType.getVehicleType(vee);
 
-        if (null == type) {
+        if (type == null) {
             return 0;
         }
 
@@ -785,7 +785,7 @@ public class TestSupportVehicle extends TestEntity {
             if (mounted.getType().hasFlag(MiscType.F_CHASSIS_MODIFICATION)) {
                 ChassisModification mod = ChassisModification.getChassisMod(mounted.getType());
 
-                if (null != mod) {
+                if (mod != null) {
                     weight *= mod.multiplier;
                 } else {
                     logger.warn("Could not find multiplier for {} chassis mod.", mounted.getType().getName());
@@ -803,6 +803,7 @@ public class TestSupportVehicle extends TestEntity {
         }
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     private double getWeightFireControl() {
         for (Mounted<?> mounted : supportVee.getMisc()) {
             if (mounted.getType().hasFlag(MiscType.F_BASIC_FIRE_CONTROL)
@@ -838,7 +839,7 @@ public class TestSupportVehicle extends TestEntity {
     }
 
     public double getTankWeightTurret() {
-        if (null != testTank) {
+        if (testTank != null) {
             return testTank.getTankWeightTurret();
         }
 
@@ -846,7 +847,7 @@ public class TestSupportVehicle extends TestEntity {
     }
 
     public double getTankWeightDualTurret() {
-        if (null != testTank) {
+        if (testTank != null) {
             return testTank.getTankWeightDualTurret();
         }
 
@@ -931,12 +932,13 @@ public class TestSupportVehicle extends TestEntity {
 
     @Override
     public String printWeightMisc() {
-        if (null != testTank) {
+        if (testTank != null) {
             return testTank.printWeightMisc();
         } else {
             return getWeightPowerAmp() != 0 ? StringUtil.makeLength(
                   "Power Amp:", getPrintSize() - 5)
-                  + TestEntity.makeWeightString(getWeightPowerAmp(), usesKgStandard()) + "\n" : "";
+                                              + TestEntity.makeWeightString(getWeightPowerAmp(), usesKgStandard())
+                                              + "\n" : "";
         }
     }
 
@@ -953,7 +955,7 @@ public class TestSupportVehicle extends TestEntity {
         }
         double weight = getWeightCrewAccommodations();
         String crewStr = weight > 0 ? StringUtil.makeLength("Crew Accommodations:", getPrintSize() - 5)
-              + TestEntity.makeWeightString(weight, usesKgStandard()) + "\n" : "";
+                                      + TestEntity.makeWeightString(weight, usesKgStandard()) + "\n" : "";
         return fireCon + crewStr;
     }
 

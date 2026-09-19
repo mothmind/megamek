@@ -65,7 +65,6 @@ import megamek.common.equipment.WeaponType;
 import megamek.common.interfaces.ITechnology;
 import megamek.common.options.OptionsConstants;
 import megamek.common.util.RoundWeight;
-import megamek.common.verifier.TestAdvancedAerospace;
 import megamek.common.verifier.TestEntity;
 
 /**
@@ -777,6 +776,7 @@ public class Jumpship extends Aero {
         return original_sail_integrity;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getSailDamage() {
         return (getOSailIntegrity() - getSailIntegrity());
     }
@@ -1274,5 +1274,10 @@ public class Jumpship extends Aero {
     @Override
     public int getRecoveryTime() {
         return 360;
+    }
+
+    @Override
+    public boolean isChassisFamiliarityEligible() {
+        return true;
     }
 }

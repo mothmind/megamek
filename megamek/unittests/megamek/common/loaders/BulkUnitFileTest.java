@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -47,21 +47,8 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import megamek.common.battleArmor.BattleArmor;
-import megamek.common.equipment.AmmoType;
-import megamek.common.equipment.ArmorType;
 import megamek.common.equipment.EquipmentType;
-import megamek.common.equipment.MiscType;
-import megamek.common.equipment.WeaponType;
-import megamek.common.equipment.enums.BombType;
-import megamek.common.units.AbstractBuildingEntity;
-import megamek.common.units.Aero;
-import megamek.common.units.Entity;
-import megamek.common.units.Infantry;
-import megamek.common.units.Jumpship;
-import megamek.common.units.Mek;
-import megamek.common.units.ProtoMek;
-import megamek.common.units.SmallCraft;
-import megamek.common.units.Tank;
+import megamek.common.units.*;
 import megamek.common.verifier.*;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -74,11 +61,6 @@ public class BulkUnitFileTest {
     public static void initializeStuff() {
         MekFileParser.initCanonUnitNames();
         EquipmentType.initializeTypes();
-        AmmoType.initializeTypes();
-        ArmorType.initializeTypes();
-        WeaponType.initializeTypes();
-        MiscType.initializeTypes();
-        BombType.initializeTypes();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -97,7 +79,7 @@ public class BulkUnitFileTest {
         Entity entity = loadUnit(file);
         var validation = verify(entity);
         // This print is to make sure you are looking at the file you expected to be looking at
-        System.out.println(file.getAbsoluteFile());
+        java.lang.System.out.println(file.getAbsoluteFile());
         assertEquals(UnitValidation.VALID, validation.state(),
               "The unit is invalid:\n\t" + entity.getDisplayName() + "\n" + validation.report());
 
@@ -187,7 +169,7 @@ public class BulkUnitFileTest {
         } else if (unit.hasETypeFlag(Entity.ETYPE_BATTLEARMOR)) {
             testEntity = new TestBattleArmor((BattleArmor) unit, entityVerifier.baOption, null);
         } else if (unit.hasETypeFlag(Entity.ETYPE_INFANTRY)) {
-            testEntity = new TestInfantry((Infantry) unit, entityVerifier.infOption, null);
+            testEntity = new TestInfantry((ConvInfantry) unit, entityVerifier.infOption, null);
         } else if (unit.hasETypeFlag(Entity.ETYPE_BUILDING_ENTITY)) {
             testEntity = new TestBuilding((AbstractBuildingEntity) unit, entityVerifier.tankOption, null);
         }
@@ -219,7 +201,7 @@ public class BulkUnitFileTest {
             try (BufferedWriter out = new BufferedWriter(new FileWriter(outFile))) {
                 out.write(((Mek) entity).getMtf());
             } catch (Exception e) {
-                System.out.println(e.getMessage());
+                java.lang.System.out.println(e.getMessage());
                 return false;
             }
             return true;

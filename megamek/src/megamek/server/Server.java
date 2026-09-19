@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2000-2005 - Ben Mazur (bmazur@sev.org)
  * Copyright (c) 2013 - Edward Cullen (eddy@obsessedcomputers.co.uk)
- * Copyright (C) 2002-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2002-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -66,10 +66,14 @@ import megamek.client.ui.util.PlayerColour;
 import megamek.codeUtilities.StringUtility;
 import megamek.common.Player;
 import megamek.common.annotations.Nullable;
+import megamek.common.board.Board;
 import megamek.common.commandLine.AbstractCommandLineParser.ParseException;
+import megamek.common.equipment.Minefield;
+import megamek.common.equipment.ObjectiveMarker;
 import megamek.common.game.Game;
 import megamek.common.game.IGame;
 import megamek.common.icons.Camouflage;
+import megamek.common.loaders.MapSettings;
 import megamek.common.net.connections.AbstractConnection;
 import megamek.common.net.enums.PacketCommand;
 import megamek.common.net.events.DisconnectedEvent;
@@ -251,7 +255,7 @@ public class Server implements Runnable {
 
             // if there's a player for this connection, remove it too
             Player player = getPlayer(conn.getId());
-            if (null != player) {
+            if (player != null) {
                 Server.this.disconnected(player);
             }
         }
@@ -588,6 +592,7 @@ public class Server implements Runnable {
     /**
      * Returns a free entity id. Perhaps this should be in Game instead.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getFreeEntityId() {
         return getGame().getNextEntityId();
     }
@@ -603,7 +608,7 @@ public class Server implements Runnable {
         }
 
         Player gamePlayer = getGame().getPlayer(connId);
-        if (null != gamePlayer) {
+        if (gamePlayer != null) {
             gamePlayer.setColour(player.getColour());
             gamePlayer.setStartingPos(player.getStartingPos());
             gamePlayer.setStartWidth(player.getStartWidth());
@@ -614,12 +619,13 @@ public class Server implements Runnable {
             gamePlayer.setStartingAnySEy(player.getStartingAnySEy());
             gamePlayer.setTeam(player.getTeam());
             gamePlayer.setCamouflage(player.getCamouflage().clone());
-            gamePlayer.setNbrMFConventional(player.getNbrMFConventional());
-            gamePlayer.setNbrMFCommand(player.getNbrMFCommand());
-            gamePlayer.setNbrMFVibra(player.getNbrMFVibra());
-            gamePlayer.setNbrMFActive(player.getNbrMFActive());
-            gamePlayer.setNbrMFInferno(player.getNbrMFInferno());
-            gamePlayer.setNbrMFEMP(player.getNbrMFEMP());
+
+            // minefields
+            for (int minefieldIndex = 0; minefieldIndex < Minefield.TYPE_SIZE; minefieldIndex++) {
+                gamePlayer.setMinefieldCount(minefieldIndex, player.getMinefieldCount(minefieldIndex));
+            }
+
+            gamePlayer.setNbrFortifiedHexes(player.getNbrFortifiedHexes());
             if (gamePlayer.getConstantInitBonus() != player.getConstantInitBonus()) {
                 sendServerChat("Player " +
                       gamePlayer.getName() +
@@ -632,6 +638,9 @@ public class Server implements Runnable {
             gamePlayer.setConstantInitBonus(player.getConstantInitBonus());
             gamePlayer.setEmail(player.getEmail());
             gamePlayer.setGroundObjectsToPlace(new ArrayList<>(player.getGroundObjectsToPlace()));
+            // the owner of a victory hex designation drives its color, visibility and reset return, so it
+            // is always the player whose list carried it - never a client-supplied value
+            ObjectiveMarker.claimDesignations(gamePlayer.getGroundObjectsToPlace(), gamePlayer.getId());
         }
     }
 
@@ -729,7 +738,7 @@ public class Server implements Runnable {
 
         // if it is not the lounge phase, this player becomes an observer
         Player player = getPlayer(connId);
-        if (!getGame().getPhase().isLounge() && (null != player) && (getGame().getEntitiesOwnedBy(player) < 1)) {
+        if (!getGame().getPhase().isLounge() && (player != null) && (getGame().getEntitiesOwnedBy(player) < 1)) {
             player.setObserver(true);
         }
 
@@ -770,7 +779,7 @@ public class Server implements Runnable {
 
         // Get the player *again*, because they may have disconnected.
         player = getPlayer(connId);
-        if (null != player) {
+        if (player != null) {
             String who = String.format("%s connected from %s", player.getName(), getClient(connId).getInetAddress());
             message = String.format("s: player #%d, %s", connId, who);
             LOGGER.info(message);
@@ -943,6 +952,7 @@ public class Server implements Runnable {
 
             XStream xStream = SerializationHelper.getLoadSaveGameXStream();
             newGame = (Game) xStream.fromXML(gzi);
+            newGame.initializeAfterLoad();
         } catch (Exception e) {
             message = String.format("Unable to load file: %s", f);
             LOGGER.error(e, message);
@@ -950,6 +960,12 @@ public class Server implements Runnable {
         }
 
         setGame(newGame);
+
+        // Saves created before mapName tracking was added land here with Board.BOARD_NAME_UNNAMED.
+        // Reconstruct the name from the saved MapSettings so the Ruler title and other UI surfaces
+        // identify the map. Only fills in when the board has the placeholder; saves with an explicit
+        // name keep theirs.
+        backfillBoardNameFromMapSettings(newGame);
 
         if (!sendInfo) {
             return true;
@@ -960,6 +976,50 @@ public class Server implements Runnable {
             sendCurrentInfo(conn.getId());
         }
         return true;
+    }
+
+    /**
+     * If the deserialized game's board has the placeholder map name (saves predate the name fix),
+     * reconstructs a display name from the saved MapSettings' selected board file names. The actual
+     * board hex data is unchanged; only the displayable name is filled in.
+     */
+    private static void backfillBoardNameFromMapSettings(Game game) {
+        Board board = game.getBoard();
+        if (board == null || !Board.BOARD_NAME_UNNAMED.equals(board.getBoardName())) {
+            return;
+        }
+        MapSettings ms = game.getMapSettings();
+        if (ms == null) {
+            return;
+        }
+        List<String> selected = ms.getBoardsSelectedVector();
+        if (selected == null || selected.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        for (String raw : selected) {
+            if (raw == null) {
+                continue;
+            }
+            String name = raw;
+            if (name.startsWith(Board.BOARD_REQUEST_ROTATION)) {
+                name = name.substring(Board.BOARD_REQUEST_ROTATION.length());
+            }
+            // Skip placeholders that don't correspond to an on-disk file
+            if (MapSettings.BOARD_GENERATED.equals(name)
+                  || MapSettings.BOARD_RANDOM.equals(name)
+                  || name.startsWith(MapSettings.BOARD_SURPRISE)) {
+                continue;
+            }
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        if (names.isEmpty()) {
+            return;
+        }
+        String reconstructed = names.size() == 1 ? names.iterator().next() : String.join(" + ", names);
+        board.setMapName(reconstructed);
     }
 
     public void saveGame(String fileName) {
@@ -1116,8 +1176,7 @@ public class Server implements Runnable {
      */
     private void transmitPlayerConnect(AbstractConnection connection) {
         for (Player player : getGame().getPlayersList()) {
-            var connectionId = connection.getId();
-            connection.send(createPlayerConnectPacket(player, player.getId() != connectionId));
+            connection.send(createPlayerConnectPacket(player, connection.getId()));
         }
     }
 
@@ -1126,24 +1185,46 @@ public class Server implements Runnable {
      */
     private void transmitPlayerConnect(Player player) {
         for (var connection : connections) {
-            var playerId = player.getId();
-            connection.send(createPlayerConnectPacket(player, playerId != connection.getId()));
+            connection.send(createPlayerConnectPacket(player, connection.getId()));
         }
     }
 
     /**
-     * Creates a packet informing that the player has connected
+     * Creates a packet informing that the player has connected. When the packet is for another player's
+     * connection, the player data is sent as a redacted copy (see {@link #redactedCopyFor(Player, int)}).
+     *
+     * @param player                the player whose data is sent
+     * @param recipientConnectionId the id of the connection the packet is sent to
      */
-    private Packet createPlayerConnectPacket(Player player, boolean isPrivate) {
+    private Packet createPlayerConnectPacket(Player player, int recipientConnectionId) {
         var playerId = player.getId();
-        var destPlayer = player;
-        if (isPrivate) {
-            // Sending the player's data to another player's
-            // connection, need to redact any private data
-            destPlayer = player.copy();
-            destPlayer.redactPrivateData();
-        }
+        var destPlayer = (playerId == recipientConnectionId) ? player : redactedCopyFor(player, recipientConnectionId);
         return new Packet(PacketCommand.PLAYER_ADD, playerId, destPlayer);
+    }
+
+    /**
+     * Creates the copy of a player's data that may be sent to another player's connection: private data is
+     * redacted, and lobby objective designations (victory hexes) are stripped unless the recipient is allowed to
+     * see them - they are a side's mission plan, visible only to the owner's team and a game master (see
+     * {@link ObjectiveMarker#isDesignationVisibleTo(Player, Player)}).
+     *
+     * @param player                the player whose data is being sent
+     * @param recipientConnectionId the id of the connection (= player id) receiving the data
+     *
+     * @return the redacted copy to send
+     */
+    private Player redactedCopyFor(Player player, int recipientConnectionId) {
+        Player destPlayer = player.copy();
+        destPlayer.redactPrivateData();
+        Player recipient = getGame().getPlayer(recipientConnectionId);
+        boolean designationsVisible = (recipient != null)
+              && ObjectiveMarker.isDesignationVisibleTo(player, recipient);
+        // a player's other carryables-to-place (briefcases etc.) were never sent to other players before
+        // the ground objects rode the player copy - keep them private: the copy carries only the victory
+        // hex designations the recipient is allowed to see
+        destPlayer.getGroundObjectsToPlace().removeIf(carryable ->
+              !(carryable instanceof ObjectiveMarker) || !designationsVisible);
+        return destPlayer;
     }
 
     /**
@@ -1152,14 +1233,7 @@ public class Server implements Runnable {
     void transmitPlayerUpdate(Player player) {
         for (var connection : connections) {
             var playerId = player.getId();
-            var destPlayer = player;
-
-            if (playerId != connection.getId()) {
-                // Sending the player's data to another player's
-                // connection, need to redact any private data
-                destPlayer = player.copy();
-                destPlayer.redactPrivateData();
-            }
+            var destPlayer = (playerId == connection.getId()) ? player : redactedCopyFor(player, connection.getId());
             connection.send(new Packet(PacketCommand.PLAYER_UPDATE, playerId, destPlayer));
         }
     }
@@ -1274,7 +1348,7 @@ public class Server implements Runnable {
         Player player = getGame().getPlayer(connId);
 
         // Check player. Please note, the connection may be pending.
-        if ((null == player) && (null == getPendingConnection(connId))) {
+        if ((player == null) && (getPendingConnection(connId) == null)) {
             String message = String.format("Server does not recognize player at connection %d", connId);
             LOGGER.error(message);
             return;
@@ -1308,9 +1382,20 @@ public class Server implements Runnable {
                     receivePlayerName(packet, connId);
                     break;
                 case PLAYER_UPDATE:
+                    Player playerBeforeUpdate = getPlayer(connId);
+                    int teamBeforeUpdate = (playerBeforeUpdate != null)
+                          ? playerBeforeUpdate.getTeam()
+                          : Player.TEAM_NONE;
                     receivePlayerInfo(packet, connId);
                     validatePlayerInfo(connId);
-                    transmitPlayerUpdate(getPlayer(connId));
+                    Player updatedPlayer = getPlayer(connId);
+                    if ((updatedPlayer != null) && (updatedPlayer.getTeam() != teamBeforeUpdate)) {
+                        // a team change alters who may see whose victory hex designations - re-send
+                        // everyone so each client gets the data its new relations allow
+                        transmitAllPlayerUpdates();
+                    } else {
+                        transmitPlayerUpdate(getPlayer(connId));
+                    }
                     break;
                 case CHAT:
                     String chat = packet.getStringValue(0);
@@ -1344,7 +1429,11 @@ public class Server implements Runnable {
                 case LOAD_GAME:
                     try {
                         sendServerChat(getPlayer(connId).getName() + " loaded a new game.");
-                        setGame((Game) packet.getObject(0));
+                        Game receivedGame = (Game) packet.getObject(0);
+                        if (receivedGame != null) {
+                            receivedGame.initializeAfterLoad();
+                        }
+                        setGame(receivedGame);
                         for (AbstractConnection conn : connections) {
                             sendCurrentInfo(conn.getId());
                         }
@@ -1361,8 +1450,16 @@ public class Server implements Runnable {
                         GAME_LOCK.unlock();
                     }
             }
-        } catch (InvalidPacketDataException e) {
-            LOGGER.error("Invalid packet data:", e);
+        } catch (InvalidPacketDataException invalidPacketData) {
+            LOGGER.error("Invalid packet data:", invalidPacketData);
+        } catch (RuntimeException handlerFailure) {
+            // A packet handler that throws must not take the thread down with it. Both callers of this method
+            // run on threads the server cannot lose: the packet pump, whose loop would end and leave the server
+            // silently ignoring every further packet from every client, and the connection receive thread that
+            // dispatches immediate packets. Logging and dropping the offending packet keeps the game running
+            // and leaves a stack trace to diagnose from.
+            LOGGER.error(handlerFailure, "Uncaught exception handling {} packet from connection {} - the packet "
+                  + "was dropped", packet.command(), connId);
         }
     }
 

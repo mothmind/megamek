@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -65,17 +65,8 @@ import megamek.common.loaders.EntityLoadingException;
 import megamek.common.options.GameOptions;
 import megamek.common.options.OptionsConstants;
 import megamek.common.options.PilotOptions;
-import megamek.common.units.AeroSpaceFighter;
-import megamek.common.units.BipedMek;
-import megamek.common.units.Crew;
-import megamek.common.units.CrewType;
-import megamek.common.units.Entity;
-import megamek.common.units.IBomber;
-import megamek.common.units.IBuilding;
-import megamek.common.units.Infantry;
-import megamek.common.units.Mek;
+import megamek.common.units.*;
 import megamek.common.weapons.handlers.TAGHandler;
-import megamek.common.weapons.handlers.artillery.ArtilleryWeaponIndirectHomingHandler;
 import megamek.common.weapons.infantry.InfantryWeapon;
 import megamek.server.Server;
 import megamek.server.totalWarfare.TWGameManager;
@@ -168,9 +159,9 @@ class ArtilleryWeaponIndirectHomingHandlerTest {
         return createInfantry(chassis, model, crewName, owner, 5, 8);
     }
 
-    Infantry createInfantry(String chassis, String model, String crewName, Player owner, int gSkill, int pSkill) {
+    ConvInfantry createInfantry(String chassis, String model, String crewName, Player owner, int gSkill, int pSkill) {
         // Create a real Infantry unit with some mocked fields
-        Infantry mockInfantry = new Infantry();
+        ConvInfantry mockInfantry = new ConvInfantry();
         mockInfantry.setGame(game);
         mockInfantry.setChassis(chassis);
         mockInfantry.setModel(model);
@@ -188,7 +179,7 @@ class ArtilleryWeaponIndirectHomingHandlerTest {
         mockInfantry.autoSetInternal();
         try {
             mockInfantry.addEquipment(EquipmentType.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE),
-                  Infantry.LOC_INFANTRY);
+                  ConvInfantry.LOC_INFANTRY);
             mockInfantry.setPrimaryWeapon((InfantryWeapon) InfantryWeapon.get(EquipmentTypeLookup.INFANTRY_ASSAULT_RIFLE));
         } catch (LocationFullException ex) {
             // do nothing
@@ -301,10 +292,10 @@ class ArtilleryWeaponIndirectHomingHandlerTest {
 
         // Create Artillery WAA and handler
         ArtilleryAttackAction artilleryAttackAction = makeArtilleryWAA(attacker, defender, attacker.getWeapon(0));
-        ArtilleryWeaponIndirectHomingHandler artie = new ArtilleryWeaponIndirectHomingHandler(makeAutoHitHomingTHD(),
-              artilleryAttackAction,
-              game,
-              gameManager);
+        megamek.common.weapons.handlers.artillery.ArtilleryWeaponDistantHomingHandler artie = new megamek.common.weapons.handlers.artillery.ArtilleryWeaponDistantHomingHandler(makeAutoHitHomingTHD(),
+                                                                                                                                                                                artilleryAttackAction,
+                                                                                                                                                                                game,
+                                                                                                                                                                                gameManager);
 
         // Set game phase and run handler to simulate initial firing
         game.setPhase(GamePhase.TARGETING);
@@ -352,10 +343,10 @@ class ArtilleryWeaponIndirectHomingHandlerTest {
 
         // Create Artillery WAA and handler
         ArtilleryAttackAction artilleryAttackAction = makeArtilleryWAA(attacker, defender, attacker.getWeapon(0));
-        ArtilleryWeaponIndirectHomingHandler artie = new ArtilleryWeaponIndirectHomingHandler(makeAutoHitHomingTHD(),
-              artilleryAttackAction,
-              game,
-              gameManager);
+        megamek.common.weapons.handlers.artillery.ArtilleryWeaponDistantHomingHandler artie = new megamek.common.weapons.handlers.artillery.ArtilleryWeaponDistantHomingHandler(makeAutoHitHomingTHD(),
+                                                                                                                                                                                artilleryAttackAction,
+                                                                                                                                                                                game,
+                                                                                                                                                                                gameManager);
 
         // Set game phase and run handler to simulate initial firing
         game.setPhase(GamePhase.TARGETING);

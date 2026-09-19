@@ -67,6 +67,7 @@ import megamek.common.event.GameListener;
 import megamek.common.force.Forces;
 import megamek.common.game.IGame;
 import megamek.common.game.InGameObject;
+import megamek.common.game.InitiativeRoll;
 import megamek.common.interfaces.IEntityRemovalConditions;
 import megamek.common.interfaces.PlanetaryConditionsUsing;
 import megamek.common.interfaces.ReportEntry;
@@ -193,7 +194,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
         int retVal = 0;
 
         // If no selector was supplied, return the count of all game entities.
-        if (null == selector) {
+        if (selector == null) {
             retVal = getNoOfEntities();
         }
 
@@ -211,6 +212,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
         return retVal;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public SkillLevel getPlayerSkill(int playerId) {
         return playerSkillLevels.getOrDefault(playerId, SkillLevel.ULTRA_GREEN);
     }
@@ -378,7 +380,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
         for (Team newTeam : initTeams) {
             for (Team oldTeam : teams) {
                 if (newTeam.equals(oldTeam)) {
-                    newTeam.setInitiative(oldTeam.getInitiative());
+                    newTeam.setInitiative(new InitiativeRoll(oldTeam.getInitiative()));
                 }
             }
         }
@@ -472,6 +474,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
     }
 
     // check current turn, phase, formation
+    @Deprecated(since = "0.51.0", forRemoval = true)
     private boolean isEligibleForAction(Formation formation) {
         return (getTurn() instanceof FormationTurn)
               && getTurn().isValidEntity(formation, this);
@@ -659,6 +662,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
     /**
      * Remove the given EntityAction from the list of pending actions.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public void removeAction(Action action) {
         pendingActions.remove(action);
     }
@@ -746,6 +750,7 @@ public class SimulationContext implements IGame, PlanetaryConditionsUsing {
      *
      * @param turnIndex the new turn index
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     protected void setTurnIndex(int turnIndex) {
         this.turnIndex = turnIndex;
     }

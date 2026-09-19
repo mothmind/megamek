@@ -226,9 +226,7 @@ public class MathUtility {
         // Miraculously, all the values are identical (most likely because there is only one value). This guards
         // against divide by 0 errors.
         if (baseDeviation == 0) {
-            // We use MathUtility.clamp() to avoid the risk of an overflow when dealing with insanely large player
-            // campaigns. This probably isn't necessary, but no reason not to include it.
-            return MathUtility.clamp((int) Math.round(crudeMean), Integer.MIN_VALUE, Integer.MAX_VALUE);
+            return Math.clamp((int) Math.round(crudeMean), Integer.MIN_VALUE, Integer.MAX_VALUE);
         }
 
         // Below, we define how strict we want the calculations. strictness < 1.0 -> more strict. strictness > 1.0 ->
@@ -249,8 +247,7 @@ public class MathUtility {
 
         double gaussianMean = weightedSum / weightTotal;
 
-        // Using Math.min() for the same reason as outlined above.
-        return MathUtility.clamp((int) Math.round(gaussianMean), Integer.MIN_VALUE, Integer.MAX_VALUE);
+        return Math.clamp((int) Math.round(gaussianMean), Integer.MIN_VALUE, Integer.MAX_VALUE);
     }
 
     // region Linear Interpolation
@@ -323,9 +320,12 @@ public class MathUtility {
      *           <li>clamp(7, 6, 8) returns 7</li>
      *           <li>clamp(12, 3, 5) returns 5</li>
      *       </ul>
+     *
+     * @deprecated Use the builtin Math.clamp() method instead.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static int clamp(final int value, final int min, final int max) {
-        return Math.min(Math.max(value, min), max);
+        return Math.clamp(value, min, max);
     }
 
     /**
@@ -340,9 +340,12 @@ public class MathUtility {
      *         <li>clamp(7, 6, 8) returns 7</li>
      *         <li>clamp(12, 3, 5) returns 5</li>
      *       </ul>
+     *
+     * @deprecated Use the builtin Math.clamp() method instead.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static double clamp(final double value, final double min, final double max) {
-        return Math.min(Math.max(value, min), max);
+        return Math.clamp(value, min, max);
     }
 
     /**
@@ -357,9 +360,12 @@ public class MathUtility {
      *         <li>clamp(7, 6, 8) returns 7</li>
      *         <li>clamp(12, 3, 5) returns 5</li>
      *       </ul>
+     *
+     * @deprecated Use the builtin Math.clamp() method instead.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static float clamp(final float value, final float min, final float max) {
-        return Math.min(Math.max(value, min), max);
+        return Math.clamp(value, min, max);
     }
 
     /**
@@ -374,9 +380,12 @@ public class MathUtility {
      *         <li>clamp(7, 6, 8) returns 7</li>
      *         <li>clamp(12, 3, 5) returns 5</li>
      *       </ul>
+     *
+     * @deprecated Use the builtin Math.clamp() method instead.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static long clamp(final long value, final long min, final long max) {
-        return Math.min(Math.max(value, min), max);
+        return Math.clamp(value, min, max);
     }
 
     /**
@@ -391,7 +400,7 @@ public class MathUtility {
      *       </ul>
      */
     public static double clamp01(double value) {
-        return Math.min(1.0, Math.max(0.0, value));
+        return Math.clamp(value, 0.0, 1.0);
     }
 
     /**
@@ -409,7 +418,7 @@ public class MathUtility {
      *       </ul>
      */
     public static double clampUlp1(double value) {
-        return Math.min(1.0, Math.max(Math.ulp(1.0), value));
+        return Math.clamp(value, Math.ulp(1.0), 1.0);
     }
     // endregion Clamp
 
@@ -552,5 +561,19 @@ public class MathUtility {
             LOGGER.warn("Can't parse String `{}` into an Boolean due to {}", value, e.getMessage());
             return defaultValue;
         }
+    }
+
+    /**
+     * Parses a string into a boolean, returning {@code false} when the input is {@code null} or empty.
+     *
+     * <p>Note: {@link Boolean#parseBoolean(String)} returns {@code true} only for (case-insensitive)
+     * {@code "true"}.</p>
+     *
+     * @param value String value to parse.
+     *
+     * @return The {@code boolean} value, or {@code false} if {@code value} is {@code null} or empty.
+     */
+    public static boolean parseBoolean(final String value) {
+        return parseBoolean(value, false);
     }
 }

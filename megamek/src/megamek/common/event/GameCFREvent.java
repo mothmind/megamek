@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2005 Ben Mazur (bmazur@sev.org)
  * Copyright (C) 2014 Nicholas Walczak (walczak@cs.umn.edu)
- * Copyright (C) 2014-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2014-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -88,6 +88,11 @@ public class GameCFREvent extends GameEvent {
     private List<Integer> tagTargets;
 
     /**
+     * Direction of displacing entity
+     */
+    private int direction;
+
+    /**
      * List of Targetable object types for tagged targets within range.
      */
     private List<Integer> tagTargetTypes;
@@ -156,6 +161,7 @@ public class GameCFREvent extends GameEvent {
         eId = id;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public int getAmsEquipNum() {
         return amsEquipNum;
     }
@@ -219,4 +225,8 @@ public class GameCFREvent extends GameEvent {
     public void setTAGTargetTypes(List<Integer> targetTypes) {
         tagTargetTypes = new ArrayList<>(targetTypes);
     }
+    
+    public void setDirection(int direction) { this.direction = direction;}
+    
+    public int getDirection() { return direction; }
 }

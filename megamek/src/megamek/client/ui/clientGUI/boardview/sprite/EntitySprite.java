@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2014-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -44,10 +44,14 @@ import megamek.client.ui.clientGUI.boardview.BoardView;
 import megamek.client.ui.clientGUI.boardview.LabelDisplayStyle;
 import megamek.client.ui.util.StringDrawer;
 import megamek.client.ui.util.UIUtil;
+import megamek.common.actions.LayExplosivesAttackAction;
 import megamek.common.annotations.Nullable;
 import megamek.common.board.Board;
 import megamek.common.board.Coords;
 import megamek.common.compute.Compute;
+import megamek.common.compute.VirtualRealityPilotingPod;
+import megamek.common.compute.VirtualRealityPilotingPod.Interference;
+import megamek.common.compute.VirtualRealityPilotingPod.InterferenceState;
 import megamek.common.equipment.HandheldWeapon;
 import megamek.common.units.*;
 
@@ -69,6 +73,7 @@ public class EntitySprite extends Sprite {
     private static final Color LABEL_CRITICAL_BACK = new Color(200, 0, 0, 200);
     private static final Color LABEL_SPACE_BACK = new Color(0, 0, 200, 200);
     private static final Color LABEL_GROUND_BACK = new Color(50, 50, 50, 200);
+    private static final int ON_DECK_ARC_ALPHA = 100;
 
     enum Positioning {
         LEFT, RIGHT
@@ -172,6 +177,17 @@ public class EntitySprite extends Sprite {
                     } else {
                         return reduceVehicleName(entity);
                     }
+                case NICKNAME_AND_ABBREVIATED: {
+                    String abbreviated = (entity instanceof Mek) ? entity.getModel()
+                          : abbreviateUnitName(standardLabelName());
+                    if (!pilotNick().isBlank()) {
+                        return "\"" + pilotNick().toUpperCase() + "\" (" + abbreviated + ")";
+                    } else if (!unitNick().isBlank()) {
+                        return "'" + unitNick() + "' (" + abbreviated + ")";
+                    } else {
+                        return abbreviated;
+                    }
+                }
                 case ONLY_NICKNAME:
                     if (!pilotNick().isBlank()) {
                         return "\"" + pilotNick().toUpperCase() + "\"";
@@ -273,6 +289,7 @@ public class EntitySprite extends Sprite {
         // Move to the board position, save this origin for correct drawing
         hexOrigin = bounds.getLocation();
         Point ePos;
+
         if (secondaryPos == -1) {
             ePos = bv.getHexLocation(entity.getPosition());
         } else {
@@ -508,7 +525,9 @@ public class EntitySprite extends Sprite {
             graph.draw(bv.getFacingPolys()[entity.getFacing()]);
         }
 
-        if ((secondaryPos == -1) || (secondaryPos == 6)) {
+        // A building entity lists its own hex as secondary position 0, so that sprite carries its status labels
+        boolean isBuildingOriginSprite = (entity instanceof AbstractBuildingEntity) && (secondaryPos == 0);
+        if ((secondaryPos == -1) || (secondaryPos == 6) || isBuildingOriginSprite) {
             // Gather unit conditions
             ArrayList<Status> stStr = new ArrayList<>();
             criticalStatus = false;
@@ -519,6 +538,10 @@ public class EntitySprite extends Sprite {
             if (entity instanceof Tank tankEntity) {
                 turretLocked = !tankEntity.hasNoTurret() && !tankEntity.canChangeSecondaryFacing();
                 crewStunned = tankEntity.getStunnedTurns();
+            } else if (entity instanceof AbstractBuildingEntity buildingEntity) {
+                // Advanced Building critical hits (TO:AR p. 118) stun the gunners or lock a turret
+                turretLocked = buildingEntity.hasLockedTurret();
+                crewStunned = buildingEntity.getStunnedTurns();
             }
 
             // draw elevation/altitude if non-zero
@@ -567,7 +590,7 @@ public class EntitySprite extends Sprite {
                 stStr.add(new Status(GUIP.getWarningColor(), "IMMOBILE"));
             }
 
-            if ((entity instanceof Infantry infantry) && infantry.isExhaustedFromFastMove()) {
+            if ((entity instanceof ConvInfantry infantry) && infantry.isExhaustedFromFastMove()) {
                 stStr.add(new Status(GUIP.getWarningColor(), "EXHAUSTED"));
             }
 
@@ -577,6 +600,16 @@ public class EntitySprite extends Sprite {
 
             if (isAffectedByECM()) {
                 stStr.add(new Status(GUIP.getCautionColor(), "Jammed"));
+            }
+
+            // Virtual Reality Piloting Pod under hostile interference (IO:AE p.63)
+            if (entity instanceof Mek mek && mek.hasVirtualRealityPilotingPod()) {
+                Interference podInterference = VirtualRealityPilotingPod.getInterference(mek);
+                if (podInterference.isBlinded()) {
+                    stStr.add(new Status(GUIP.getWarningColor(), "vrppBlinded"));
+                } else if (podInterference.state() == InterferenceState.DEGRADED) {
+                    stStr.add(new Status(GUIP.getCautionColor(), "vrppDegraded"));
+                }
             }
 
             // Turret Lock
@@ -639,24 +672,38 @@ public class EntitySprite extends Sprite {
                 int dig = inf.getDugIn();
                 if (dig == Infantry.DUG_IN_COMPLETE) {
                     stStr.add(new Status(Color.PINK, "D", SMALL));
+                } else if (inf.isFortifying()) {
+                    // Multi-turn fortification: show how far along the build is (stage of total).
+                    stStr.add(new Status(GUIP.getPrecautionColor(), "fortifyProgress",
+                          new Object[] { inf.getFortifyStage(), inf.getFortifyTotalStages() }));
+                    stStr.add(new Status(Color.PINK, "D", SMALL));
                 } else if (dig != Infantry.DUG_IN_NONE) {
                     stStr.add(new Status(GUIP.getPrecautionColor(), "Working", DIRECT));
                     stStr.add(new Status(Color.PINK, "D", SMALL));
+                } else if (inf.isHitTheDeck()) {
+                    stStr.add(new Status(GUIP.getPrecautionColor(), "Deck", DIRECT));
                 } else if (inf.isTakingCover()) {
                     stStr.add(new Status(GUIP.getPrecautionColor(), "TakingCover"));
                 }
 
                 if (inf.turnsLayingExplosives >= 0) {
-                    stStr.add(new Status(GUIP.getPrecautionColor(), "Working", DIRECT));
+                    int turnsSpent = Math.min(inf.turnsLayingExplosives,
+                          LayExplosivesAttackAction.MAX_TURNS_LAYING_EXPLOSIVES);
+                    // Keep this label short: non-small statuses draw centered in the hex-sized sprite buffer
+                    // and longer text gets clipped at its edges
+                    stStr.add(new Status(GUIP.getPrecautionColor(),
+                          "Rigging " + turnsSpent + "/" + LayExplosivesAttackAction.MAX_TURNS_LAYING_EXPLOSIVES,
+                          DIRECT));
                     stStr.add(new Status(Color.PINK, "E", SMALL));
                 }
             }
 
             // Tank
             if (isTank && entity instanceof Tank tank) {
-                int dig = tank.getDugIn();
-                if ((dig >= Tank.DUG_IN_FORTIFYING1) && (dig <= Tank.DUG_IN_FORTIFYING3)) {
-                    stStr.add(new Status(GUIP.getPrecautionColor(), "Working", DIRECT));
+                if (tank.isFortifying()) {
+                    // Multi-turn fortification: show how far along the build is (stage of total).
+                    stStr.add(new Status(GUIP.getPrecautionColor(), "fortifyProgress",
+                          new Object[] { tank.getFortifyStage(), tank.getFortifyTotalStages() }));
                     stStr.add(new Status(Color.PINK, "D", SMALL));
                 }
             }
@@ -766,12 +813,11 @@ public class EntitySprite extends Sprite {
 
             // draw facing
             graph.setColor(Color.white);
-            if ((entity.getFacing() != -1) && !((entity instanceof Infantry)
-                  && !((Infantry) entity).hasFieldWeapon()
-                  && !((Infantry) entity).isTakingCover()) && !(
-                  (entity instanceof IAero)
-                        && ((IAero) entity).isSpheroid()
-                        && !board.isSpace())) {
+            if ((entity.getFacing() != -1)
+                  && !((entity instanceof ConvInfantry infantry)
+                  && !infantry.hasFieldWeapon()
+                  && !infantry.isTakingCover())
+                  && !((entity instanceof IAero) && ((IAero) entity).isSpheroid() && !board.isSpace())) {
                 // Indicate a stacked unit with the same facing that can still move
                 if (shouldIndicateNotDone() && bv.game.getPhase().isMovement()) {
                     var tr = graph.getTransform();
@@ -798,6 +844,9 @@ public class EntitySprite extends Sprite {
                     graph.draw(bv.getFacingPolys()[entity.getFacing()]);
                 }
             }
+
+            // highlight the active front arc for infantry that has hit the deck with a field weapon
+            drawOnDeckFrontArc(graph);
 
             // determine secondary facing for non-meks & flipped arms
             int secFacing = entity.getFacing();
@@ -891,6 +940,33 @@ public class EntitySprite extends Sprite {
         }
 
         graph.dispose();
+    }
+
+    /**
+     * Highlights the three front-arc hexsides for conventional infantry that has hit the deck while carrying an active
+     * field weapon. While on the deck such a unit may only fire in its front arc (TO:AR p.106), so the player must
+     * designate a facing; filling the active arc makes that choice obvious at a glance instead of having to infer it
+     * from the single facing arrow. Mirrors the directional emphasis used for the Taking Cover posture.
+     *
+     * @param graph the entity sprite graphics context, already scaled to the board zoom
+     */
+    private void drawOnDeckFrontArc(Graphics2D graph) {
+        if (!(entity instanceof ConvInfantry infantry)
+              || !infantry.isHitTheDeck()
+              || !infantry.hasActiveFieldWeapon()) {
+            return;
+        }
+        int facing = entity.getFacing();
+        if (facing == -1) {
+            return;
+        }
+        Color arcColor = GUIP.getPrecautionColor();
+        graph.setColor(new Color(arcColor.getRed(), arcColor.getGreen(), arcColor.getBlue(), ON_DECK_ARC_ALPHA));
+        Shape[] facingShapes = bv.getFacingPolys();
+        for (int arcOffset = -1; arcOffset <= 1; arcOffset++) {
+            int arcDirection = ((facing + arcOffset) + 6) % 6;
+            graph.fill(facingShapes[arcDirection]);
+        }
     }
 
     /**

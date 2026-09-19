@@ -32,16 +32,12 @@
  */
 package megamek.client.ui.dialogs.advancedsearch;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.IntStream;
 
 import megamek.common.Messages;
+import megamek.common.SourceBookCode;
+import megamek.common.SourceBooks;
 import megamek.common.annotations.Nullable;
 import megamek.common.loaders.MekSummary;
 import megamek.common.units.Entity;
@@ -57,6 +53,8 @@ import megamek.logging.MMLogger;
  */
 public class MekSearchFilter {
     private static final MMLogger LOGGER = MMLogger.create(MekSearchFilter.class);
+    private static final Set<SourceBookCode> BASE_RULE_BOOKS = Set.of(
+          SourceBookCode.TW, SourceBookCode.TM, SourceBookCode.BMM, SourceBookCode.CORE);
 
     public enum BoolOp {
         AND, OR, NOP
@@ -70,6 +68,7 @@ public class MekSearchFilter {
     public int iOmni;
     public int iMilitary;
     public int iIndustrial;
+    public int iFrankenMek;
     public int iMountedInfantry;
     public int iWaterOnly;
     public int iDoomedOnGround;
@@ -90,6 +89,7 @@ public class MekSearchFilter {
     public int iCanon;
     public int iPatchwork;
     public String source;
+    public Set<SourceBookCode> rulesRefs = new LinkedHashSet<>();
     public String mulID;
     public int iInvalid;
     public int iFailedToLoadEquipment;
@@ -241,6 +241,7 @@ public class MekSearchFilter {
             isDisabled = mekSearchFilter.isDisabled;
             checkEquipment = mekSearchFilter.checkEquipment;
             equipmentCriteria = new ExpressionTree(mekSearchFilter.equipmentCriteria);
+            rulesRefs.addAll(mekSearchFilter.rulesRefs);
         } else {
             isDisabled = true;
             checkEquipment = false;
@@ -317,7 +318,7 @@ public class MekSearchFilter {
                 // take the last seen operand, then the results of further
                 // parsing becomes a child of the current node
                 if (ft.op == BoolOp.AND) {
-                    ExpNode leaf = currNode.children.remove(currNode.children.size() - 1);
+                    ExpNode leaf = currNode.children.removeLast();
                     newNode.operation = BoolOp.AND;
                     newNode.children.add(leaf);
                     ExpNode sibling = createFTFromTokensRecursively(tokenIterator, newNode);
@@ -429,7 +430,11 @@ public class MekSearchFilter {
             return false;
         }
 
-        if (!f.source.isEmpty() && !f.findTokenized(mek.getSource(), f.source)) {
+        if (!f.source.isEmpty() && !matchesSourceFilter(mek, f.source)) {
+            return false;
+        }
+
+        if (!matchesRulesRefs(mek.getRulesRefs(), f.rulesRefs)) {
             return false;
         }
 
@@ -454,6 +459,10 @@ public class MekSearchFilter {
         }
 
         if (!isMatch(f.iIndustrial, mek.isIndustrialMek())) {
+            return false;
+        }
+
+        if (!isMatch(f.iFrankenMek, mek.isFrankenMek())) {
             return false;
         }
 
@@ -1020,7 +1029,7 @@ public class MekSearchFilter {
 
                     int currQty = qtyIter.next();
 
-                    if (null == currEq) {
+                    if (currEq == null) {
                         LOGGER.debug("List<String> currEq is null");
                         return false;
                     }
@@ -1065,8 +1074,38 @@ public class MekSearchFilter {
         return retVal;
     }
 
+    static boolean matchesSourceFilter(MekSummary mek, String sourceFilter) {
+        return SourceBooks.splitSourceList(sourceFilter).stream()
+              .anyMatch(source -> findTokenized(mek.getSource(), source) || findTokenized(mek.getPublished(), source));
+    }
+
+    static boolean matchesRulesRefs(List<? extends Collection<SourceBookCode>> buckets,
+          Set<SourceBookCode> selectedBooks) {
+        if (selectedBooks.isEmpty()) {
+            return true;
+        }
+        if (selectedBooks.stream().anyMatch(BASE_RULE_BOOKS::contains)) {
+            return buckets.stream().anyMatch(selectedBooks::containsAll);
+        }
+        return buckets.stream().anyMatch(bucket -> matchesWithoutBaseBooks(bucket, selectedBooks));
+    }
+
+    private static boolean matchesWithoutBaseBooks(Collection<SourceBookCode> bucket,
+          Set<SourceBookCode> selectedBooks) {
+        boolean hasNonBaseBook = false;
+        for (SourceBookCode book : bucket) {
+            if (!BASE_RULE_BOOKS.contains(book)) {
+                hasNonBaseBook = true;
+                if (!selectedBooks.contains(book)) {
+                    return false;
+                }
+            }
+        }
+        return hasNonBaseBook;
+    }
+
     /**
-     * Returns true if the given searchTarget contains all the tokens (separated by space) given in the searchTokens
+     * Returns true if the given searchTarget contains all the tokens (separated by spaces) given in the searchTokens
      * String. Comparisons are done ignoring case. Returns false when any of the strings is null or the search tokens
      * are empty.
      *
@@ -1075,12 +1114,12 @@ public class MekSearchFilter {
      *
      * @return True if all search tokens are contained in the searchTarget
      */
-    private boolean findTokenized(@Nullable String searchTarget, @Nullable String searchTokens) {
+    private static boolean findTokenized(@Nullable String searchTarget, @Nullable String searchTokens) {
         if (searchTarget == null || searchTokens == null || searchTokens.isBlank()) {
             return false;
         } else {
             String searchTargetLowerCase = searchTarget.toLowerCase(Locale.ROOT);
-            String[] tokens = searchTokens.toLowerCase(Locale.ROOT).split(" ");
+            String[] tokens = searchTokens.toLowerCase(Locale.ROOT).trim().split("\\s+");
             return Arrays.stream(tokens).allMatch(searchTargetLowerCase::contains);
         }
     }

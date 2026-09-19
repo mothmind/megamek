@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2025-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -45,18 +45,19 @@ import megamek.common.equipment.Mounted;
 import megamek.common.options.IOption;
 import megamek.common.options.OptionsConstants;
 import megamek.common.options.PilotOptions;
-import megamek.common.units.Infantry;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.InfantryMount;
 import megamek.common.verifier.TestInfantry;
+import megamek.common.weapons.infantry.InfantryDisposableWeaponHandler;
 
 /**
  * The Entity information shown in the unit selector and many other places in MM, MML and MHQ.
  */
 class InfantryReadout extends GeneralEntityReadout {
 
-    protected final Infantry infantry;
+    protected final ConvInfantry infantry;
 
-    protected InfantryReadout(Infantry infantry, boolean showDetail, boolean useAlternateCost,
+    protected InfantryReadout(ConvInfantry infantry, boolean showDetail, boolean useAlternateCost,
           boolean ignorePilotBV) {
 
         super(infantry, showDetail, useAlternateCost, ignorePilotBV);
@@ -153,10 +154,10 @@ class InfantryReadout extends GeneralEntityReadout {
 
         if (infantry.getSpecializations() > 0) {
             var specList = new ItemList("Infantry Specializations");
-            for (int i = 0; i < Infantry.NUM_SPECIALIZATIONS; i++) {
+            for (int i = 0; i < ConvInfantry.NUM_SPECIALIZATIONS; i++) {
                 int spec = 1 << i;
                 if (infantry.hasSpecialization(spec)) {
-                    specList.addItem(Infantry.getSpecializationName(spec));
+                    specList.addItem(ConvInfantry.getSpecializationName(spec));
                 }
             }
             result.add(new PlainLine());
@@ -213,7 +214,7 @@ class InfantryReadout extends GeneralEntityReadout {
             details.append(type1.getDisplayName()).append(" x").append(infantry.getProstheticEnhancement1Count());
         }
         if (infantry.hasProstheticEnhancement2()) {
-            if (details.length() > 0) {
+            if (!details.isEmpty()) {
                 details.append(", ");
             }
             ProstheticEnhancementType type2 = infantry.getProstheticEnhancement2();
@@ -235,7 +236,7 @@ class InfantryReadout extends GeneralEntityReadout {
             details.append(pair1Type.getDisplayName()).append(" x2");
         }
         if (infantry.hasExtraneousPair2()) {
-            if (details.length() > 0) {
+            if (!details.isEmpty()) {
                 details.append(", ");
             }
             ProstheticEnhancementType pair2Type = infantry.getExtraneousPair2();
@@ -248,17 +249,22 @@ class InfantryReadout extends GeneralEntityReadout {
     protected List<ViewElement> getWeapons(boolean showDetail) {
         List<ViewElement> result = new ArrayList<>();
         result.add(new LabeledLine(Messages.getString("MekView.PrimaryWeapon"),
-              (null != infantry.getPrimaryWeapon()) ? infantry.getPrimaryWeapon().getDesc() : MESSAGE_NONE));
+                                   (infantry.getPrimaryWeapon() != null) ? infantry.getPrimaryWeapon()
+                                                                                   .getDesc() : MESSAGE_NONE));
         result.add(new LabeledLine(Messages.getString("MekView.SecondWeapon"),
               secondaryCIWeaponDescriptor()));
+        if (infantry.hasDisposableWeapon()) {
+            result.add(new LabeledLine(Messages.getString("MekView.DisposableWeapon"),
+                  infantry.getDisposableWeapon().getDesc()));
+        }
         result.add(new LabeledLine(Messages.getString("MekView.DmgPerTrooper"),
-              "%3.3f".formatted(infantry.getDamagePerTrooper())));
+              damagePerTrooperDescriptor()));
 
         if (infantry.hasFieldWeapon()) {
             result.add(new PlainLine());
             List<Mounted<?>> allFieldGuns = infantry.originalFieldWeapons();
             List<Mounted<?>> activeFieldGuns = infantry.activeFieldWeapons();
-            EquipmentType fieldGunType = allFieldGuns.get(0).getType();
+            EquipmentType fieldGunType = allFieldGuns.getFirst().getType();
             String typeName = TestInfantry.isFieldArtilleryType(fieldGunType)
                   ? Messages.getString("MekView.FieldArty")
                   : Messages.getString("MekView.FieldGun");
@@ -292,15 +298,32 @@ class InfantryReadout extends GeneralEntityReadout {
         }
     }
 
+    /**
+     * @return the per-soldier damage, with the Disposable Weapon's per-soldier contribution (3x its damage, TO:AuE
+     *       p.116, Corrected Sixth Printing) appended as a "+" bonus when the platoon carries one
+     */
+    private String damagePerTrooperDescriptor() {
+        String damage = "%3.3f".formatted(infantry.getDamagePerTrooper());
+        if (infantry.hasDisposableWeapon()) {
+            double disposableDamage = InfantryDisposableWeaponHandler.DISPOSABLE_DAMAGE_MULTIPLIER
+                  * infantry.getDisposableWeapon().getInfantryDamage();
+            damage += " + %3.3f".formatted(disposableDamage);
+        }
+        return damage;
+    }
+
     @Override
     protected List<ViewElement> createArmorElements() {
         List<ViewElement> result = new ArrayList<>();
 
-        ViewElement troopers = new PlainElement(infantry.getShootingStrength());
-        if (infantry.getShootingStrength() == 0) {
+        int activeTroopersCount = infantry.getActiveTroopers();
+        int originalTrooperCount = infantry.getOriginalTrooperCount();
+
+        ViewElement troopers = new PlainElement(activeTroopersCount);
+        if (activeTroopersCount == 0) {
             troopers = new DestroyedElement(0);
-        } else if (infantry.getShootingStrength() < infantry.getOriginalTrooperCount()) {
-            troopers = new DamagedElement(infantry.getShootingStrength());
+        } else if (activeTroopersCount < originalTrooperCount) {
+            troopers = new DamagedElement(activeTroopersCount);
         }
         result.add(new LabeledLine(Messages.getString("MekView.Men"), troopers));
 
@@ -327,30 +350,25 @@ class InfantryReadout extends GeneralEntityReadout {
     }
 
     private String getInfantryArmor() {
-        String armorDescription = "None";
-        EquipmentType armorKit = infantry.getArmorKit();
-        if (armorKit != null) {
-            armorDescription = armorKit.getName();
-            StringJoiner abilities = new StringJoiner(", ", " (", ")");
-            abilities.setEmptyValue("");
-
-            if (infantry.hasSpaceSuit()) {
-                abilities.add("Spacesuit");
+        String armorName;
+        if (infantry.hasArmor()) {
+            EquipmentType armor = infantry.getArmorKit();
+            if (armor != null) {
+                armorName = armor.getName();
+            } else {
+                armorName = infantry.getCustomArmorName() != null ? infantry.getCustomArmorName()
+                      : Messages.getString("MekView.Custom");
+                if (!infantry.getArmorSpecials().isBlank()) {
+                    armorName += " " + infantry.getArmorSpecials();
+                }
             }
-
-            if (infantry.hasDEST()) {
-                abilities.add("DEST");
+        } else {
+            armorName = Messages.getString("MekView.None");
+            if (!infantry.getArmorSpecials().isBlank()) {
+                armorName += " " + infantry.getArmorSpecials();
             }
-
-            // Sneak Suit abilities are part of the armor name and don't need to be listed
-            if (!infantry.hasSneakCamo()
-                  && (infantry.getCrew() != null && infantry.hasAbility(OptionsConstants.MD_DERMAL_CAMO_ARMOR))) {
-                abilities.add("Camo");
-            }
-
-            armorDescription += abilities.toString();
         }
-        return armorDescription;
+        return armorName;
     }
 
     @Override

@@ -44,6 +44,7 @@ import megamek.common.equipment.WeaponMounted;
 import megamek.common.equipment.WeaponType;
 import megamek.common.game.Game;
 import megamek.common.moves.MovePath;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.Entity;
 import megamek.common.units.Infantry;
 import megamek.common.units.Targetable;
@@ -133,7 +134,7 @@ public class InfantryFireControl extends FireControl {
                 int infantryCount = 1;
 
                 if (shooter.isConventionalInfantry()) {
-                    infantryCount = shooter.getInternal(Infantry.LOC_INFANTRY);
+                    infantryCount = shooter.getInternal(ConvInfantry.LOC_INFANTRY);
                 } else if (shooter instanceof BattleArmor) {
                     infantryCount = ((BattleArmor) shooter).getNumberActiveTroopers();
                 }
@@ -196,12 +197,12 @@ public class InfantryFireControl extends FireControl {
         FiringPlan bestPlan = new FiringPlan(target);
 
         // Shooting isn't possible if one of us isn't on the board.
-        if ((null == shooter.getPosition()) || shooter.isOffBoard()
+        if ((shooter.getPosition() == null) ||shooter.isOffBoard()
               || !game.getBoard().contains(shooter.getPosition())) {
             logger.error("Shooter's position is NULL/Off Board!");
             return bestPlan;
         }
-        if ((null == target.getPosition()) || target.isOffBoard() || !game.getBoard().contains(target.getPosition())) {
+        if ((target.getPosition() == null) ||target.isOffBoard() || !game.getBoard().contains(target.getPosition())){
             logger.error("Target's position is NULL/Off Board!");
             return bestPlan;
         }
@@ -212,10 +213,10 @@ public class InfantryFireControl extends FireControl {
             return super.guessBestFiringPlanUnderHeat(shooter, shooterState, target, targetState, maxHeat, game);
         }
 
-        if (null == shooterState) {
+        if (shooterState == null) {
             shooterState = new EntityState(shooter);
         }
-        if (null == targetState) {
+        if (targetState == null) {
             targetState = new EntityState(target);
         }
 
@@ -304,7 +305,7 @@ public class InfantryFireControl extends FireControl {
     private boolean weaponIsAppropriate(WeaponMounted weapon, InfantryFiringPlanType firingPlanType) {
         boolean weaponIsSwarm = (weapon.getType()).getInternalName().equals(Infantry.SWARM_MEK);
         boolean weaponIsLegAttack = (weapon.getType()).getInternalName().equals(Infantry.LEG_ATTACK);
-        boolean weaponIsFieldGuns = weapon.getLocation() == Infantry.LOC_FIELD_GUNS;
+        boolean weaponIsFieldGuns = weapon.getLocation() == ConvInfantry.LOC_FIELD_GUNS;
 
         return switch (firingPlanType) {
             case FieldGuns -> weaponIsFieldGuns;

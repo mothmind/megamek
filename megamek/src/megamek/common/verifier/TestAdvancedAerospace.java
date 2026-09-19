@@ -62,7 +62,6 @@ import megamek.common.units.Warship;
 import megamek.common.util.RoundWeight;
 import megamek.common.util.StringUtil;
 import megamek.common.weapons.bayWeapons.BayWeapon;
-import megamek.common.weapons.capitalWeapons.ScreenLauncherWeapon;
 
 /**
  * Validation and construction data for advanced aerospace units (jump ships, warships, space stations)
@@ -101,7 +100,7 @@ public class TestAdvancedAerospace extends TestAero {
      * @return The total number of armor points allowed to the vessel
      */
     public static int maxArmorPoints(Jumpship vessel) {
-        double pointsPerTon = ArmorType.forEntity(vessel).getPointsPerTon();
+        double pointsPerTon = ArmorType.forEntity(vessel).getPointsPerTon(vessel);
         int baseArmor = (int) (pointsPerTon * maxArmorWeight(vessel) + getSIBonusArmorPoints(vessel));
         if (vessel.isPrimitive()) {
             return (int) (baseArmor * 0.66);
@@ -152,6 +151,7 @@ public class TestAdvancedAerospace extends TestAero {
         }
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public static double armorPointsPerTon(Jumpship vessel, int at, boolean clan) {
         ArmorType arm = ArmorType.of(at, clan);
         return arm.getPointsPerTon(vessel);
@@ -333,26 +333,12 @@ public class TestAdvancedAerospace extends TestAero {
     }
 
     /**
-     * One gunner is required for each capital weapon and each six standard scale weapons, rounding up
-     *
-     * @return The vessel's minimum gunner requirements.
+     * Returns the number of required officers of the vessel from total base crew and gunners.
+     * @param vessel The vessel
+     * @return The number of required officers
      */
-    public static int requiredGunners(Jumpship vessel) {
-        int capitalWeapons = 0;
-        int stdWeapons = 0;
-        for (Mounted<?> m : vessel.getTotalWeaponList()) {
-            if ((m.getType() instanceof BayWeapon) || (((WeaponType) m.getType()).getLongRange() <= 1)) {
-                continue;
-            }
-            if (m.getType().hasFlag(WeaponType.F_MASS_DRIVER)) {
-                capitalWeapons += 10;
-            } else if (((WeaponType) m.getType()).isCapital() || (m.getType() instanceof ScreenLauncherWeapon)) {
-                capitalWeapons++;
-            } else {
-                stdWeapons++;
-            }
-        }
-        return capitalWeapons + (int) Math.ceil(stdWeapons / 6.0);
+    public static int requiredOfficers(Jumpship vessel) {
+        return (int) Math.ceil((vessel.getNCrew() - vessel.getBayPersonnel()) / 6.0);
     }
 
     public TestAdvancedAerospace(Jumpship vessel, TestEntityOption option, String fs) {
@@ -615,6 +601,7 @@ public class TestAdvancedAerospace extends TestAero {
         return vessel;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public Jumpship getAdvancedAerospace() {
         return vessel;
     }
@@ -706,51 +693,7 @@ public class TestAdvancedAerospace extends TestAero {
 
     @Override
     public boolean hasIllegalEquipmentCombinations(StringBuffer buff) {
-        boolean illegal = false;
-
-        // Make sure all bays have at least one weapon and that there are at least
-        // ten shots of ammo for each ammo-using weapon in the bay.
-        for (WeaponMounted bay : vessel.getWeaponBayList()) {
-            if (bay.getBayWeapons().isEmpty()) {
-                buff.append("Bay ").append(bay.getName()).append(" has no weapons\n");
-                illegal = true;
-            }
-            Map<AmmoTypeEnum, Integer> ammoWeaponCount = new HashMap<>();
-            Map<AmmoTypeEnum, Integer> ammoTypeCount = new HashMap<>();
-            for (WeaponMounted w : bay.getBayWeapons()) {
-                if (w.isOneShot()) {
-                    continue;
-                }
-                ammoWeaponCount.merge(w.getType().getAmmoType(), 1, Integer::sum);
-            }
-            for (AmmoMounted a : bay.getBayAmmo()) {
-                ammoTypeCount.merge(a.getType().getAmmoType(), a.getUsableShotsLeft(), Integer::sum);
-            }
-            for (AmmoTypeEnum at : ammoWeaponCount.keySet()) {
-                if (at != AmmoType.AmmoTypeEnum.NA) {
-                    int needed = ammoWeaponCount.get(at) * 10;
-                    if ((at == AmmoType.AmmoTypeEnum.AC_ULTRA) || (at == AmmoType.AmmoTypeEnum.AC_ULTRA_THB)) {
-                        needed *= 2;
-                    } else if ((at == AmmoType.AmmoTypeEnum.AC_ROTARY)) {
-                        needed *= 6;
-                    }
-                    if (!ammoTypeCount.containsKey(at) || ammoTypeCount.get(at) < needed) {
-                        buff.append("Bay ")
-                              .append(bay.getName())
-                              .append(" does not have the minimum 10 shots of ammo for each weapon\n");
-                        illegal = true;
-                        break;
-                    }
-                }
-            }
-            for (AmmoTypeEnum at : ammoTypeCount.keySet()) {
-                if (!ammoWeaponCount.containsKey(at)) {
-                    buff.append("Bay ").append(bay.getName()).append(" has ammo for a weapon not in the bay\n");
-                    illegal = true;
-                    break;
-                }
-            }
-        }
+        boolean illegal = TestSmallCraft.hasIllegalBayAmmo(vessel, buff);
 
         // Count lateral weapons to make sure both sides match
         Map<EquipmentType, Integer> leftFwd = new HashMap<>();
@@ -926,12 +869,13 @@ public class TestAdvancedAerospace extends TestAero {
         boolean illegal = false;
         int crewSize = vessel.getNCrew() - vessel.getBayPersonnel();
         int reqCrew = minimumBaseCrew(vessel) + requiredGunners(vessel);
+        int reqOfficers = requiredOfficers(vessel);
         if (crewSize < reqCrew) {
             buffer.append("Requires ").append(reqCrew).append(" crew and only has ").append(crewSize).append("\n");
             illegal = true;
         }
-        if (vessel.getNOfficers() < Math.ceil(reqCrew / 6.0)) {
-            buffer.append("Requires at least ").append((int) Math.ceil(reqCrew / 6.0)).append(" officers\n");
+        if (vessel.getNOfficers() < reqOfficers) {
+            buffer.append("Requires at least ").append(reqOfficers).append(" officers\n");
             illegal = true;
         }
         crewSize += vessel.getNPassenger();
@@ -940,7 +884,7 @@ public class TestAdvancedAerospace extends TestAero {
         int quarters = 0;
         for (Bay bay : vessel.getTransportBays()) {
             Quarters q = Quarters.getQuartersForBay(bay);
-            if (null != q) {
+            if (q != null) {
                 quarters += (int) bay.getCapacity();
             }
         }

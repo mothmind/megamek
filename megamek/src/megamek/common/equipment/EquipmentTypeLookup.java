@@ -113,6 +113,8 @@ public class EquipmentTypeLookup {
     public static final String BA_DWP = "ISDetachableWeaponPack";
     @EquipmentName
     public static final String BA_APM = "BAAPMount";
+    @EquipmentName
+    public static final String BA_MODULAR_EQUIPMENT_ADAPTOR = "BAMEA";
 
     @EquipmentName
     public static final String SINGLE_HS = "Heat Sink";
@@ -166,6 +168,10 @@ public class EquipmentTypeLookup {
     public static final String PINTLE_TURRET = "PintleTurret";
     @EquipmentName
     public static final String MAST_MOUNT = "ISMastMount";
+    @EquipmentName
+    public static final String DNI_COCKPIT_MOD = "DNICockpitModification";
+    @EquipmentName
+    public static final String EI_INTERFACE = "EIInterface";
 
     @EquipmentName
     public static final String AMPHIBIOUS_CHASSIS_MOD = "AmphibiousChassisMod";
@@ -218,9 +224,19 @@ public class EquipmentTypeLookup {
     @EquipmentName
     public static final String INFANTRY_TAG = "InfantryTAG";
     @EquipmentName
+    public static final String INFANTRY_MORTAR_LIGHT = "InfantryLightMortar";
+    @EquipmentName
+    public static final String INFANTRY_MORTAR_HEAVY = "InfantryHeavyMortar";
+    @EquipmentName
+    public static final String INFANTRY_MORTAR_LIGHT_INFERNO = "InfantryLightMortarInferno";
+    @EquipmentName
+    public static final String INFANTRY_MORTAR_HEAVY_INFERNO = "InfantryHeavyMortarInferno";
+    @EquipmentName
     public static final String VIBRO_SHOVEL = "Vibro-Shovel";
     @EquipmentName
     public static final String DEMOLITION_CHARGE = "Demolition Charge";
+    @EquipmentName
+    public static final String INFANTRY_BRIDGE_KIT = "Infantry Bridge Kit";
     @EquipmentName
     public static final String INFANTRY_AMMO = "Infantry Ammo";
     @EquipmentName
@@ -371,4 +387,13 @@ public class EquipmentTypeLookup {
 
     @EquipmentName
     public static final String SV_EXTERNAL_HARDPOINT = "External Stores Hardpoint";
+
+    @EquipmentName
+    public static final String NLRT5 = "ISNLRT05";
+    @EquipmentName
+    public static final String NLRT10 = "ISNLRT10";
+    @EquipmentName
+    public static final String NLRT15 = "ISNLRT15";
+    @EquipmentName
+    public static final String NLRT20 = "ISNLRT20";
 }

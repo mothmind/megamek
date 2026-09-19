@@ -48,11 +48,13 @@ import megamek.common.bays.CargoBay;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.game.Game;
 import megamek.common.options.GameOptions;
+import megamek.common.options.IOption;
 import megamek.common.options.Option;
 import megamek.common.options.OptionsConstants;
 import megamek.common.options.PilotOptions;
 import megamek.common.units.AeroSpaceFighter;
 import megamek.common.units.BipedMek;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.Crew;
 import megamek.common.units.EntityMovementMode;
 import megamek.common.units.Infantry;
@@ -100,6 +102,9 @@ public class CargoBayTest {
         when(mockTrueBoolOpt.booleanValue()).thenReturn(true);
         when(mockFalseBoolOpt.booleanValue()).thenReturn(false);
         when(mockGameOptions.getOption(anyString())).thenReturn(mockTrueBoolOpt);
+        IOption mockRulesSystemOption = mock (IOption.class);
+        when(mockRulesSystemOption.stringValue()).thenReturn(OptionsConstants.RULES_CORE);
+        when(mockGameOptions.getOption(OptionsConstants.RULES_SYSTEM)).thenReturn(mockRulesSystemOption);
         when(mockGameOptions.intOption(OptionsConstants.ALLOWED_YEAR)).thenReturn(3151);
 
         team1.addPlayer(player1);
@@ -131,7 +136,7 @@ public class CargoBayTest {
 
     static public Infantry createInfantry(String chassis, String model, String crewName, Game game) {
         // Create a real Infantry unit with some mocked fields
-        Infantry mockInfantry = new Infantry();
+        Infantry mockInfantry = new ConvInfantry();
         mockInfantry.setGame(game);
         mockInfantry.setChassis(chassis);
         mockInfantry.setModel(model);

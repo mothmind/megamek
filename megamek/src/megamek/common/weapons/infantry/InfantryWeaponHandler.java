@@ -50,6 +50,7 @@ import megamek.common.equipment.WeaponType;
 import megamek.common.game.Game;
 import megamek.common.loaders.EntityLoadingException;
 import megamek.common.options.OptionsConstants;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.Entity;
 import megamek.common.units.IBuilding;
 import megamek.common.units.Infantry;
@@ -139,7 +140,7 @@ public class InfantryWeaponHandler extends WeaponHandler {
         // Only applies if the unit has the MD_PL_ENHANCED or MD_PL_I_ENHANCED ability
         double prostheticBonusDamage = 0;
         StringBuilder prostheticEnhancementNames = new StringBuilder();
-        if (attackingEntity instanceof Infantry infantry) {
+        if (attackingEntity instanceof ConvInfantry infantry) {
             boolean isInSameHex = nRange == 0;
             boolean hasProsthetics = infantry.hasProstheticEnhancement();
             boolean hasEnhancedAbility = infantry.hasAbility(OptionsConstants.MD_PL_ENHANCED)
@@ -166,7 +167,7 @@ public class InfantryWeaponHandler extends WeaponHandler {
                     if (damageApplies && enhancement2.hasDamageBonus()) {
                         prostheticBonusDamage += enhancement2.getDamagePerTrooper()
                               * infantry.getProstheticEnhancement2Count();
-                        if (prostheticEnhancementNames.length() > 0) {
+                        if (!prostheticEnhancementNames.isEmpty()) {
                             prostheticEnhancementNames.append(", ");
                         }
                         prostheticEnhancementNames.append(enhancement2.getDisplayName());
@@ -182,7 +183,7 @@ public class InfantryWeaponHandler extends WeaponHandler {
         // Only applies if the unit has the MD_PL_EXTRA_LIMBS ability
         double extraneousBonusDamage = 0;
         StringBuilder extraneousEnhancementNames = new StringBuilder();
-        if ((attackingEntity instanceof Infantry infantry) && (nRange == 0)
+        if ((attackingEntity instanceof ConvInfantry infantry) && (nRange == 0)
               && infantry.hasExtraneousLimbs()
               && infantry.hasAbility(OptionsConstants.MD_PL_EXTRA_LIMBS)) {
             boolean targetIsConventionalInfantry = target.isConventionalInfantry();
@@ -203,7 +204,7 @@ public class InfantryWeaponHandler extends WeaponHandler {
                 boolean damageApplies = !enhancement2.isConventionalInfantryOnly() || targetIsConventionalInfantry;
                 if (damageApplies && enhancement2.hasDamageBonus()) {
                     extraneousBonusDamage += enhancement2.getDamagePerTrooper() * 2; // 2 items per pair
-                    if (extraneousEnhancementNames.length() > 0) {
+                    if (!extraneousEnhancementNames.isEmpty()) {
                         extraneousEnhancementNames.append(", ");
                     }
                     extraneousEnhancementNames.append(enhancement2.getDisplayName());
@@ -231,24 +232,31 @@ public class InfantryWeaponHandler extends WeaponHandler {
         int tailDamageDealt = (int) Math.round(tailBonusDamage * troopersHit);
 
         // beast-mounted infantry get range 0 bonus damage per platoon
-        if ((attackingEntity instanceof Infantry) && (nRange == 0)) {
-            InfantryMount mount = ((Infantry) attackingEntity).getMount();
+        int mountBurstDamageDealt = 0;
+        if ((attackingEntity instanceof ConvInfantry infantry) && (nRange == 0)) {
+            InfantryMount mount = infantry.getMount();
             if (mount != null) {
                 if (!target.isConventionalInfantry()) {
                     damageDealt += mount.vehicleDamage();
                 } else if (mount.getBurstDamageDice() > 0) {
-                    damageDealt += Compute.d6(mount.getBurstDamageDice());
+                    mountBurstDamageDealt = Compute.d6(mount.getBurstDamageDice());
+                    damageDealt += mountBurstDamageDealt;
                 }
             }
         }
 
-        // conventional infantry weapons with high damage get treated as if they have
-        // the infantry burst mod
-        if (target.isConventionalInfantry() &&
-              (weaponType.hasFlag(WeaponType.F_INF_BURST) ||
-                    (attackingEntity.isConventionalInfantry()
-                          && ((Infantry) attackingEntity).primaryWeaponDamageCapped()))) {
-            damageDealt += Compute.d6();
+        // A Heavy Burst weapon adds 1D6 damage against conventional infantry. A platoon whose primary weapon is
+        // over the damage cap gains that feature outright (TM p. 152), so the cap has to be read off the ATTACKING
+        // platoon; reading it off the target made the bonus depend on what the victim happened to be carrying.
+        int heavyBurstDamageDealt = 0;
+        // Kept as instanceof, not isConventionalInfantry(): CombatVehicleEscapePod is a ConvInfantry subclass that
+        // answers false, so switching would silently drop the bonus against escape pods.
+        if ((target instanceof ConvInfantry)
+              && (weaponType.hasFlag(WeaponType.F_INF_BURST)
+                    || ((attackingEntity instanceof ConvInfantry attackingInfantry)
+                          && attackingInfantry.primaryWeaponDamageCapped()))) {
+            heavyBurstDamageDealt = Compute.d6();
+            damageDealt += heavyBurstDamageDealt;
         }
         if ((target instanceof Infantry) && ((Infantry) target).isMechanized()) {
             damageDealt /= 2;
@@ -280,7 +288,9 @@ public class InfantryWeaponHandler extends WeaponHandler {
               - tsmDamageDealt
               - prostheticDamageDealt
               - extraneousDamageDealt
-              - tailDamageDealt;
+              - tailDamageDealt
+              - heavyBurstDamageDealt
+              - mountBurstDamageDealt;
         boolean hasTsm = tsmDamageDealt > 0;
         boolean hasProsthetic = prostheticDamageDealt > 0;
         boolean hasExtraneous = extraneousDamageDealt > 0;
@@ -293,13 +303,13 @@ public class InfantryWeaponHandler extends WeaponHandler {
                 allEnhancementNames.append(prostheticEnhancementNames);
             }
             if (hasExtraneous) {
-                if (allEnhancementNames.length() > 0) {
+                if (!allEnhancementNames.isEmpty()) {
                     allEnhancementNames.append(", ");
                 }
                 allEnhancementNames.append(extraneousEnhancementNames);
             }
             if (hasTail) {
-                if (allEnhancementNames.length() > 0) {
+                if (!allEnhancementNames.isEmpty()) {
                     allEnhancementNames.append(", ");
                 }
                 allEnhancementNames.append(Messages.getString("Compute.ProstheticTail"));
@@ -337,6 +347,23 @@ public class InfantryWeaponHandler extends WeaponHandler {
             }
         }
 
+        // The burst dice are rolled, not derived from the weapon, so without a line of their own the player has
+        // no way to tell a high roll from a hard-hitting platoon.
+        if (heavyBurstDamageDealt > 0) {
+            Report heavyBurstReport = new Report(3422);
+            heavyBurstReport.subject = subjectId;
+            heavyBurstReport.indent(2);
+            heavyBurstReport.add(heavyBurstDamageDealt);
+            vPhaseReport.addElement(heavyBurstReport);
+        }
+        if (mountBurstDamageDealt > 0) {
+            Report mountBurstReport = new Report(3423);
+            mountBurstReport.subject = subjectId;
+            mountBurstReport.indent(2);
+            mountBurstReport.add(mountBurstDamageDealt);
+            vPhaseReport.addElement(mountBurstReport);
+        }
+
         if (target.isConventionalInfantry()) {
             // this is a little strange, but I can't just do this in calcDamagePerHit
             // because
@@ -359,9 +386,9 @@ public class InfantryWeaponHandler extends WeaponHandler {
         int av;
         // Sigh, another rules oversight - nobody bothered to figure this out
         // To be consistent with other cluster weapons we will assume 60% hit
-        if (attackingEntity.isConventionalInfantry()) {
-            double damage = ((Infantry) attackingEntity).getDamagePerTrooper();
-            av = (int) Math.round(damage * 0.6 * ((Infantry) attackingEntity).getShootingStrength());
+        if (attackingEntity instanceof ConvInfantry infantry) {
+            double damage = infantry.getDamagePerTrooper();
+            av = (int) Math.round(damage * 0.6 * infantry.getShootingStrength());
         } else {
             // Small fixed wing support
             av = super.calcAttackValue();
@@ -405,10 +432,10 @@ public class InfantryWeaponHandler extends WeaponHandler {
      * Utility function to calculate variable damage based only on the firing entity.
      */
     public static double calculateBaseDamage(Entity ae, Mounted<?> weapon, WeaponType weaponType) {
-        if (ae.isConventionalInfantry()) {
+        if (ae instanceof ConvInfantry infantry) {
             // for conventional infantry, we have to calculate primary and secondary weapons
             // to get damage per trooper
-            return ((Infantry) ae).getDamagePerTrooper();
+            return infantry.getDamagePerTrooper();
         } else if (ae.isSupportVehicle()) {
             // Damage for some weapons depends on what type of ammo is being used
             if ((weapon.getLinked() != null)

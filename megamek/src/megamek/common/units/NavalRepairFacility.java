@@ -127,6 +127,7 @@ public class NavalRepairFacility extends UnitBay {
         return arts;
     }
 
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public void setPressurized(boolean pressurized) {
         this.pressurized = pressurized;
     }
@@ -157,10 +158,10 @@ public class NavalRepairFacility extends UnitBay {
                 return true;
             }
 
-            Entity troop = unit.getGame().getEntity(troops.get(0));
+            Entity troop = unit.getGame().getEntity(troops.getFirst());
 
             return ((troops.size() == 1)
-                  && (null != troop) && (troop.hasETypeFlag(Entity.ETYPE_DROPSHIP)));
+                    && (troop != null) && (troop.hasETypeFlag(Entity.ETYPE_DROPSHIP)));
         } else if (unit.hasETypeFlag(Entity.ETYPE_JUMPSHIP)) {
             return troops.isEmpty();
         } else {

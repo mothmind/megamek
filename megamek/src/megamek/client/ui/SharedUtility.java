@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008 - Ben Mazur (bmazur@sev.org).
- * Copyright (C) 2008-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2008-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -541,7 +541,7 @@ public class SharedUtility {
                   + (prevHex
                   .containsTerrain(Terrains.BRIDGE)
                   ? prevHex
-                  .terrainLevel(Terrains.BRIDGE_ELEV)
+                    .terrainLevel(Terrains.BRIDGE_ELEV)
                   : 0))))) {
                 nagReport.append(Messages.getString("MovementDisplay.BackWardsElevationChange"));
                 SharedUtility.checkNag(entity.getBasePilotingRoll(overallMoveType), nagReport, psrList);
@@ -595,9 +595,14 @@ public class SharedUtility {
 
             firstStep = false;
         }
-
+        
         // running with destroyed hip or gyro needs a check
-        rollTarget = entity.checkRunningWithDamage(overallMoveType);
+        rollTarget = entity.checkRunningWithDamage(overallMoveType, md.getHexesMoved());
+        checkNag(rollTarget, nagReport, psrList);
+
+        // if we moved a hex with a destroyed leg, but it was not a run
+        rollTarget = Game.rulesManager.getRulesPSR().checkWalkWithLegDestroyed(entity,
+              overallMoveType, md.getHexesMoved());
         checkNag(rollTarget, nagReport, psrList);
 
         // if we sprinted with MASC or a supercharger, then we need a PSR
@@ -1004,7 +1009,7 @@ public class SharedUtility {
     public static double predictLeapFallDamage(Entity movingEntity, TargetRoll data) {
         // Rough guess based on normal pilots
         double odds = Compute.oddsAbove(data.getValue(), false) / 100d;
-        int fallHeight = data.getModifiers().get(data.getModifiers().size() - 1).value();
+        int fallHeight = data.getModifiers().getLast().value();
         double fallDamage = Math.round(movingEntity.getWeight() / 10.0)
               * (fallHeight + 1);
         LOGGER.trace("Predicting Leap fall damage for {} at {}% odds, {} fall height",
@@ -1022,7 +1027,7 @@ public class SharedUtility {
     public static double predictLeapDamage(Entity movingEntity, TargetRoll data) {
         int legMultiplier = (movingEntity.isQuadMek()) ? 4 : 2;
         double odds = Compute.oddsAbove(data.getValue(), false) / 100d;
-        int fallHeight = data.getModifiers().get(data.getModifiers().size() - 1).value() / 2;
+        int fallHeight = data.getModifiers().getLast().value() / 2;
         double legDamage = fallHeight * (legMultiplier);
         LOGGER.trace("Predicting Leap damage for {} at {}% odds, {} fall height",
               movingEntity.getDisplayName(),

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2018-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -44,10 +44,10 @@ import megamek.common.compute.Compute;
 import megamek.common.equipment.EquipmentType;
 import megamek.common.equipment.Mounted;
 import megamek.common.equipment.WeaponType;
-import megamek.common.equipment.enums.MiscTypeFlag;
 import megamek.common.options.IOption;
+import megamek.common.options.PilotOptions;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.EntityMovementMode;
-import megamek.common.units.Infantry;
 import megamek.common.verifier.EntityVerifier;
 import megamek.common.weapons.infantry.InfantryWeapon;
 
@@ -58,9 +58,9 @@ import megamek.common.weapons.infantry.InfantryWeapon;
  */
 public class InfantryTROView extends TROView {
 
-    private final Infantry inf;
+    private final ConvInfantry inf;
 
-    public InfantryTROView(Infantry infantry) {
+    public InfantryTROView(ConvInfantry infantry) {
         this.inf = infantry;
     }
 
@@ -84,21 +84,34 @@ public class InfantryTROView extends TROView {
               String.format("%d %s",
                     inf.getSecondaryWeaponsPerSquad() * inf.getSquadCount(),
                     inf.getSecondaryWeapon().getName()));
-        final EquipmentType armorKit = inf.getArmorKit();
-        if (null != armorKit) {
-            setModelData("armorKit", armorKit.getName());
+        String armorName;
+        if (inf.hasArmor()) {
+            EquipmentType armor = inf.getArmorKit();
+            if (armor != null) {
+                armorName = armor.getName();
+            } else {
+                armorName = inf.getCustomArmorName() != null ? inf.getCustomArmorName()
+                      : Messages.getString("TROView.Custom");
+                if (!inf.getArmorSpecials().isBlank()) {
+                    armorName += " " + inf.getArmorSpecials();
+                }
+            }
+        } else {
+            armorName = Messages.getString("TROView.None");
+            if (!inf.getArmorSpecials().isBlank()) {
+                armorName += " " + inf.getArmorSpecials();
+            }
         }
+        setModelData("armorKit", armorName);
 
         final List<String> notes = new ArrayList<>();
         addWeaponNotes(notes);
-        if (null != armorKit) {
-            addArmorNotes(notes, armorKit);
-        }
+        addArmorNotes(notes);
         addAugmentationNotes(notes);
         if (notes.isEmpty()) {
             setModelData("notes", Messages.getString("TROView.None"));
         } else {
-            setModelData("notes", String.join(" ", notes));
+            setModelData("notes", String.join("\n", notes));
         }
 
         if (inf.getMount() != null) {
@@ -123,9 +136,9 @@ public class InfantryTROView extends TROView {
             }
         }
         StringJoiner sj = new StringJoiner(", ");
-        for (int i = 0; i < Infantry.NUM_SPECIALIZATIONS; i++) {
+        for (int i = 0; i < ConvInfantry.NUM_SPECIALIZATIONS; i++) {
             if (inf.hasSpecialization(1 << i)) {
-                sj.add(Infantry.getSpecializationName(1 << i));
+                sj.add(ConvInfantry.getSpecializationName(1 << i));
             }
         }
         if (!sj.toString().isBlank()) {
@@ -154,11 +167,12 @@ public class InfantryTROView extends TROView {
 
         sj = new StringJoiner(", ");
         final int maxRange = rangeWeapon.getInfantryRange() * 3;
-        int lastMod = Compute.getInfantryRangeMods(0, rangeWeapon, inf.getSecondaryWeapon(), false).getValue();
+        int lastMod = Compute.getInfantryRangeMods(0, rangeWeapon, inf.getSecondaryWeapon(),
+              inf.getDisposableWeapon(), false).getValue();
         int hex = 0;
         for (int range = 1; range <= (maxRange + 1); range++) {
-            final int mod = Compute.getInfantryRangeMods(range, rangeWeapon, inf.getSecondaryWeapon(), false)
-                  .getValue();
+            final int mod = Compute.getInfantryRangeMods(range, rangeWeapon, inf.getSecondaryWeapon(),
+                  inf.getDisposableWeapon(), false).getValue();
             if (mod != lastMod) {
                 if ((range - hex) > 1) {
                     sj.add(String.format("%+d (%d-%d Hexes)", lastMod, hex, range - 1));
@@ -196,16 +210,19 @@ public class InfantryTROView extends TROView {
             notes.add(Messages.getString("TROView.InfantryNote.SCUBA"));
         }
         final List<EquipmentType> fieldGuns = inf.getWeaponList().stream()
-              .filter(m -> m.getLocation() == Infantry.LOC_FIELD_GUNS).map(Mounted::getType)
+              .filter(m -> m.getLocation() == ConvInfantry.LOC_FIELD_GUNS).map(Mounted::getType)
               .collect(Collectors.toList());
-        final int shots = inf.getAmmo().stream().filter(m -> m.getLocation() == Infantry.LOC_FIELD_GUNS)
+        final int shots = inf.getAmmo().stream().filter(m -> m.getLocation() == ConvInfantry.LOC_FIELD_GUNS)
               .mapToInt(Mounted::getBaseShotsLeft).sum();
         if (fieldGuns.size() > 1) {
-            notes.add(String.format(Messages.getString("TROView.InfantryNote.FieldGuns"), fieldGuns.size(),
-                  fieldGuns.get(0).getName(), shots / fieldGuns.size(), (int) fieldGuns.get(0).getTonnage(inf)));
+            notes.add(String.format(Messages.getString("TROView.InfantryNote.FieldGuns"),
+                  fieldGuns.size(),
+                  fieldGuns.getFirst().getName(),
+                  shots / fieldGuns.size(),
+                  (int) fieldGuns.getFirst().getTonnage(inf)));
         } else if (!fieldGuns.isEmpty()) {
             notes.add(String.format(Messages.getString("TROView.InfantryNote.SingleFieldGun"),
-                  fieldGuns.get(0).getName(), shots, (int) fieldGuns.get(0).getTonnage(inf)));
+                  fieldGuns.getFirst().getName(), shots, (int) fieldGuns.getFirst().getTonnage(inf)));
         }
         if ((inf.getSecondaryWeaponsPerSquad() > 1) && (inf.getSecondaryWeapon() != null)) {
             if (inf.getSecondaryWeapon().hasFlag(WeaponType.F_INF_BURST)) {
@@ -237,24 +254,25 @@ public class InfantryTROView extends TROView {
         }
     }
 
-    private void addArmorNotes(List<String> notes, EquipmentType armorKit) {
-        if (armorKit.hasFlag(MiscTypeFlag.S_DEST)) {
+    private void addArmorNotes(List<String> notes) {
+        if (inf.hasDEST()) {
             notes.add(Messages.getString("TROView.InfantryNote.DESTArmor"));
-        }
-        if (armorKit.hasFlag(MiscTypeFlag.S_SNEAK_CAMO)) {
-            notes.add(Messages.getString("TROView.InfantryNote.CamoArmor"));
-        }
-        if (armorKit.hasFlag(MiscTypeFlag.S_SNEAK_IR)) {
-            notes.add(Messages.getString("TROView.InfantryNote.IRArmor"));
-        }
-        if (armorKit.hasFlag(MiscTypeFlag.S_SNEAK_ECM)) {
-            notes.add(Messages.getString("TROView.InfantryNote.ECMArmor"));
+        } else {
+            if (inf.hasSneakCamo()) {
+                notes.add(Messages.getString("TROView.InfantryNote.CamoArmor"));
+            }
+            if (inf.hasSneakIR()) {
+                notes.add(Messages.getString("TROView.InfantryNote.IRArmor"));
+            }
+            if (inf.hasSneakECM()) {
+                notes.add(Messages.getString("TROView.InfantryNote.ECMArmor"));
+            }
         }
     }
 
     private void addAugmentationNotes(List<String> notes) {
         final List<IOption> options = new ArrayList<>();
-        for (final Enumeration<IOption> e = inf.getCrew().getOptions().getOptions(); e.hasMoreElements(); ) {
+        for (final Enumeration<IOption> e = inf.getCrew().getOptions(PilotOptions.MD_ADVANTAGES); e.hasMoreElements(); ) {
             final IOption option = e.nextElement();
             if (option.booleanValue()) {
                 options.add(option);
@@ -262,8 +280,10 @@ public class InfantryTROView extends TROView {
         }
         if (!options.isEmpty()) {
             notes.add(Messages.getString("TROView.InfantryNote.Augmented"));
-            options.forEach(o -> notes.add(o.getDisplayableName().replaceAll("\\s+\\(Not Implemented\\)", "") + ": "
-                  + o.getDescription().replaceAll("See IO.*", "")));
+            options.forEach(o -> notes.add(o.getDisplayableName().replaceAll(
+                  Messages.getString("TROView.InfantryNote.notImplementedRegex"), "") +
+                  ": " +
+                  o.getDescription().replaceAll(Messages.getString("TROView.InfantryNote.seeIORegex"), "")));
         }
     }
 }

@@ -39,13 +39,13 @@ import java.util.ArrayList;
 import java.util.Vector;
 
 import megamek.common.HexTarget;
-import megamek.common.HitData;
 import megamek.common.Report;
 import megamek.common.ToHitData;
 import megamek.common.actions.WeaponAttackAction;
 import megamek.common.board.Coords;
 import megamek.common.compute.Compute;
 import megamek.common.enums.GamePhase;
+import megamek.common.enums.HitDamageType;
 import megamek.common.equipment.AmmoType;
 import megamek.common.equipment.WeaponType;
 import megamek.common.game.Game;
@@ -69,7 +69,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
 
     public VGLWeaponHandler(ToHitData t, WeaponAttackAction w, Game g, TWGameManager m) throws EntityLoadingException {
         super(t, w, g, m);
-        generalDamageType = HitData.DAMAGE_NONE;
+        generalDamageType = HitDamageType.DAMAGE_NONE;
     }
 
     /**
@@ -102,7 +102,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
         r.subject = subjectId;
         r.add(weaponType.getName());
         r.add(ammoType.getSubMunitionName());
-        r.add(affectedCoords.get(0).getBoardNum());
+        r.add(affectedCoords.getFirst().getBoardNum());
         r.add(affectedCoords.get(1).getBoardNum());
         r.add(affectedCoords.get(2).getBoardNum());
         vPhaseReport.add(r);
@@ -124,7 +124,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
                 r.add("Hex " + c.getBoardNum());
                 r.indent();
                 dmgReports.insertElementAt(r, 0);
-                dmgReports.get(dmgReports.size() - 1).newlines++;
+                dmgReports.getLast().newlines++;
                 for (Report dr : dmgReports) {
                     dr.indent();
                 }
@@ -139,7 +139,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
                     r.add(bldg.getName());
                     r.indent();
                     dmgReports.insertElementAt(r, 0);
-                    dmgReports.get(dmgReports.size() - 1).newlines++;
+                    dmgReports.getLast().newlines++;
                     for (Report dr : dmgReports) {
                         dr.indent();
                     }
@@ -159,7 +159,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
                     r.addDesc(entTarget);
                     r.indent();
                     dmgReports.insertElementAt(r, 0);
-                    dmgReports.get(dmgReports.size() - 1).newlines++;
+                    dmgReports.getLast().newlines++;
                     for (Report dr : dmgReports) {
                         dr.indent();
                     }
@@ -198,7 +198,7 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
                         r.indent(2);
                         dmgReports.add(r);
                     }
-                    dmgReports.get(dmgReports.size() - 1).newlines++;
+                    dmgReports.getLast().newlines++;
                     vPhaseReport.addAll(dmgReports);
                 }
             }
@@ -208,4 +208,3 @@ public class VGLWeaponHandler extends AmmoWeaponHandler {
     }
 
 }
-

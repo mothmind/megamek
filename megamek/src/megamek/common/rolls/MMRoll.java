@@ -71,6 +71,7 @@ public class MMRoll extends Roll {
      *
      * @param rng - the <code>MMRandom</code> that produces random numbers.
      */
+    @Deprecated(since = "0.51.0", forRemoval = true)
     public MMRoll(MMRandom rng) {
         super(6, 1);
         this.total = rng.randomInt(this.faces) + this.min;
@@ -244,7 +245,7 @@ public class MMRoll extends Roll {
         int start = 1;
         int whichRNG = MMRandom.R_DEFAULT;
 
-        if (null == args || 0 == args.length) {
+        if (args == null || 0 == args.length) {
             count = 2;
         } else if (1 == args.length) {
             count = MathUtility.parseInt(args[0]);

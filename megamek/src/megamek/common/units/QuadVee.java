@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2025 - The MegaMek Team. All Rights Reserved.
+ * Copyright (c) 2017-2026 - The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -227,7 +227,7 @@ public class QuadVee extends QuadMek {
             }
         }
 
-        if (!mpCalculationSetting.ignoreWeather() && (null != game)) {
+        if (!mpCalculationSetting.ignoreWeather() && (game != null)) {
             PlanetaryConditions conditions = game.getPlanetaryConditions();
             int weatherMod = conditions.getMovementMods(this);
             mp = Math.max(mp + weatherMod, 0);
@@ -441,10 +441,7 @@ public class QuadVee extends QuadMek {
 
     @Override
     public int getMaxElevationChange() {
-        if (getConversionMode() == CONV_MODE_VEHICLE) {
-            return 1;
-        }
-        return 2;
+        return (getConversionMode() == CONV_MODE_VEHICLE) ? 1 : 2;
     }
 
     @Override
@@ -502,7 +499,7 @@ public class QuadVee extends QuadMek {
             }
             // are we wheeled and in light snow?
             Hex hex = game.getHexOf(this);
-            if ((null != hex) && getMovementMode().isWheeled()
+            if ((hex != null) && getMovementMode().isWheeled()
                   && (hex.terrainLevel(Terrains.SNOW) == 1)) {
                 roll.addModifier(1, "thin snow");
             }
@@ -548,6 +545,8 @@ public class QuadVee extends QuadMek {
     @Override
     public boolean canGoHullDown() {
         if (getConversionMode() == CONV_MODE_VEHICLE != convertingNow) {
+            // A QuadVee is never a Large Vehicle (it is capped at standard 'Mek tonnage), so the Large Vehicle
+            // hull-down exclusion that applies to Tanks does not need to be checked here.
             Hex occupiedHex = game.getHexOf(this);
             return occupiedHex.containsTerrain(Terrains.FORTIFIED)
                   && gameOptions().booleanOption(OptionsConstants.ADVANCED_GROUND_MOVEMENT_TAC_OPS_HULL_DOWN);

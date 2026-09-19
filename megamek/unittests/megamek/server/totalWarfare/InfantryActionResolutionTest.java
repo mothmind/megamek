@@ -56,6 +56,7 @@ import megamek.common.equipment.EquipmentType;
 import megamek.common.game.Game;
 import megamek.common.units.AbstractBuildingEntity;
 import megamek.common.units.BuildingEntity;
+import megamek.common.units.ConvInfantry;
 import megamek.common.units.Entity;
 import megamek.common.units.Infantry;
 import org.junit.jupiter.api.BeforeAll;
@@ -368,8 +369,8 @@ public class InfantryActionResolutionTest {
               mockStatic(MarinePointsScoreCalculator.class, org.mockito.Answers.CALLS_REAL_METHODS);
               MockedStatic<InfantryCombatTables> mockedTables =
                     mockStatic(InfantryCombatTables.class, org.mockito.Answers.CALLS_REAL_METHODS)) {
-            mockedMps.when(() -> MarinePointsScoreCalculator.calculateMPS(any(), any()))
-                  .thenReturn(10); // Give both sides positive MPS so combat proceeds
+            mockedMps.when(() -> MarinePointsScoreCalculator.calculateScore(any(), any()))
+                  .thenReturn(10.0); // Give both sides positive MPS so combat proceeds
             mockedTables.when(() -> InfantryCombatTables.resolveAction(any(String.class), anyInt()))
                   .thenReturn(InfantryCombatResult.eliminated()); // 0% attacker, 100% defender
 
@@ -384,14 +385,14 @@ public class InfantryActionResolutionTest {
 
     // ==================== Helper Methods ====================
 
-    private Infantry createInfantry(Player owner, Coords position, int strength) {
-        Infantry infantry = new Infantry();
+    private ConvInfantry createInfantry(Player owner, Coords position, int strength) {
+        ConvInfantry infantry = new ConvInfantry();
         infantry.setOwner(owner);
         infantry.setGame(game);
         infantry.setPosition(position);
         infantry.setSquadSize(strength);
         infantry.setSquadCount(1);
-        infantry.initializeInternal(strength, Infantry.LOC_INFANTRY);
+        infantry.initializeInternal(strength, ConvInfantry.LOC_INFANTRY);
         return infantry;
     }
 
@@ -410,7 +411,10 @@ public class InfantryActionResolutionTest {
 
     private AbstractBuildingEntity createBuildingWithCrew(Player owner, Coords position, int crewSize) {
         AbstractBuildingEntity building = createBuilding(owner, position);
+        building.getCrew().setSize(crewSize);
         building.getCrew().setCurrentSize(crewSize);
+        // Crew count for nothing until the defender commits them; these tests commit the whole crew
+        building.commitCrew(crewSize);
         return building;
     }
 
@@ -419,6 +423,11 @@ public class InfantryActionResolutionTest {
      * the private infantryActionTracker field.
      */
     private static class TestableGameManager extends TWGameManager {
+        @Override
+        public void entityUpdate(int entityId) {
+            // No server behind this manager; the resolution's unit updates have nowhere to go
+        }
+
         public InfantryActionTracker getInfantryCombatTracker() {
             try {
                 var field = TWGameManager.class.getDeclaredField("infantryActionTracker");

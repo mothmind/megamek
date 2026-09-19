@@ -100,15 +100,8 @@ public class BLKSupportTankFile extends BLKFile implements IMekLoader {
         if (!dataFile.exists("cruiseMP")) {
             throw new EntityLoadingException("Could not find cruiseMP block.");
         }
-        int engineRating = Math.max(10,
-              (dataFile.getDataAsInt("cruiseMP")[0] * (int) t.getWeight()) - t.getSuspensionFactor());
-        if (dataFile.getDataAsInt("cruiseMP")[0] == 0) {
-            engineRating = engineCode == BLKFile.NONE ? 0 : 10;
-        }
-        if ((engineRating % 5) > 0) {
-            engineRating += (5 - (engineRating % 5));
-        }
-        t.setEngine(new Engine(engineRating, BLKFile.translateEngineCode(engineCode), engineFlags));
+        // Support ratings are derived from the owning unit by Engine.getRating(Entity).
+        t.setEngine(new Engine(0, BLKFile.translateEngineCode(engineCode), engineFlags));
         t.setOriginalWalkMP(dataFile.getDataAsInt("cruiseMP")[0]);
 
         loadSVArmor(t);
@@ -166,7 +159,10 @@ public class BLKSupportTankFile extends BLKFile implements IMekLoader {
         loadEquipment(t, "Left", Tank.LOC_LEFT);
         loadEquipment(t, "Rear", Tank.LOC_REAR);
         if (!t.hasNoTurret()) {
+            // Try to load any and all turrets; missing turrets will be skipped
             loadEquipment(t, "Turret", Tank.LOC_TURRET);
+            loadEquipment(t, "Rear Turret", Tank.LOC_TURRET);
+            loadEquipment(t, "Front Turret", Tank.LOC_TURRET_2);
         }
         loadEquipment(t, "Body", Tank.LOC_BODY);
 
