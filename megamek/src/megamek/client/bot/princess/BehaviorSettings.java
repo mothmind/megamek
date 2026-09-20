@@ -162,6 +162,8 @@ public class BehaviorSettings implements Serializable {
     private boolean exclusiveMutualSupport = false; // should I only form up with my units or consider also friends?
     private CombatPosture combatPosture = CombatPosture.AUTO; // Am I attacking or defending?
     private boolean iAmAPirate = false; // Am I a pirate?
+    private boolean allowSurrender = false; // May I offer surrender once I am clearly beaten?
+    private int resolveIndex = 5; // How much punishment do I take before offering surrender?
     private boolean ignoreDamageOutput = false;
     private boolean experimental = false; // running experimental features?
     private final Set<Integer> ignoredUnitTargets = new HashSet<>();
@@ -194,6 +196,8 @@ public class BehaviorSettings implements Serializable {
         copy.setExclusiveMutualSupport(isExclusiveMutualSupport());
         copy.setCombatPosture(getCombatPosture());
         copy.setIAmAPirate(iAmAPirate());
+        copy.setAllowSurrender(isAllowSurrender());
+        copy.setResolveIndex(getResolveIndex());
         copy.setIgnoreDamageOutput(isIgnoreDamageOutput());
         copy.setExperimental(isExperimental());
         getStrategicBuildingTargets().forEach(copy::addStrategicTarget);
@@ -257,6 +261,58 @@ public class BehaviorSettings implements Serializable {
      */
     public void setIAmAPirate(String iAmAPirate) {
         setIAmAPirate(Boolean.parseBoolean(iAmAPirate));
+    }
+
+    /**
+     * @return TRUE if I may offer surrender (/defeat) at the end of a round once my force is clearly beaten.
+     */
+    public boolean isAllowSurrender() {
+        return allowSurrender;
+    }
+
+    /**
+     * @param allowSurrender Set TRUE if I may offer surrender once my force is clearly beaten.
+     */
+    public void setAllowSurrender(final boolean allowSurrender) {
+        this.allowSurrender = allowSurrender;
+    }
+
+    /**
+     * @param allowSurrender Set TRUE if I may offer surrender once my force is clearly beaten.
+     */
+    public void setAllowSurrender(final String allowSurrender) {
+        setAllowSurrender(Boolean.parseBoolean(allowSurrender));
+    }
+
+    /**
+     * How much punishment do I take before offering surrender? 0 folds at the first setback, 10 fights to the last.
+     *
+     * @return Index of the Resolve value.
+     */
+    public int getResolveIndex() {
+        return resolveIndex;
+    }
+
+    /**
+     * How much punishment do I take before offering surrender?
+     *
+     * @param index The index of the Resolve value to be used.
+     */
+    public void setResolveIndex(final int index) {
+        resolveIndex = validateIndex(index);
+    }
+
+    /**
+     * How much punishment do I take before offering surrender?
+     *
+     * @param index The index of the Resolve value to be used.
+     */
+    public void setResolveIndex(final String index) throws PrincessException {
+        try {
+            setResolveIndex(Integer.parseInt(index));
+        } catch (final NumberFormatException ex) {
+            throw new PrincessException(ex);
+        }
     }
 
     /**
@@ -1038,6 +1094,10 @@ public class BehaviorSettings implements Serializable {
                 setCombatPosture(child.getTextContent());
             } else if ("iAmAPirate".equalsIgnoreCase(child.getNodeName())) {
                 setIAmAPirate(child.getTextContent());
+            } else if ("allowSurrender".equalsIgnoreCase(child.getNodeName())) {
+                setAllowSurrender(child.getTextContent());
+            } else if ("resolveIndex".equalsIgnoreCase(child.getNodeName())) {
+                setResolveIndex(child.getTextContent());
             } else if ("ignoreDamageOutput".equalsIgnoreCase(child.getNodeName())) {
                 setIgnoreDamageOutput(Boolean.parseBoolean(child.getTextContent()));
             } else if ("experimental".equalsIgnoreCase(child.getNodeName())) {
@@ -1141,6 +1201,14 @@ public class BehaviorSettings implements Serializable {
             iAmAPirateNode.setTextContent("" + iAmAPirate());
             behavior.appendChild(iAmAPirateNode);
 
+            final Element allowSurrenderNode = doc.createElement("allowSurrender");
+            allowSurrenderNode.setTextContent("" + isAllowSurrender());
+            behavior.appendChild(allowSurrenderNode);
+
+            final Element resolveIndexNode = doc.createElement("resolveIndex");
+            resolveIndexNode.setTextContent("" + getResolveIndex());
+            behavior.appendChild(resolveIndexNode);
+
             final Element exclusiveMutualSupportNode = doc.createElement("exclusiveMutualSupport");
             exclusiveMutualSupportNode.setTextContent("" + isExclusiveMutualSupport());
             behavior.appendChild(exclusiveMutualSupportNode);
@@ -1210,6 +1278,8 @@ public class BehaviorSettings implements Serializable {
         out.append("\n\t Exclusive Mutual Support: ").append(isExclusiveMutualSupport());
         out.append("\n\t Combat Posture: ").append(getCombatPosture());
         out.append("\n\t I am a Pirate: ").append(iAmAPirate());
+        out.append("\n\t Allow Surrender: ").append(isAllowSurrender());
+        out.append("\n\t Resolve: ").append(getResolveIndex());
         out.append("\n\t I Ignore Damage Output: ").append(isIgnoreDamageOutput());
         out.append("\n\t Experimental: ").append(isExperimental());
         out.append("\n\t Targets:");
@@ -1277,6 +1347,10 @@ public class BehaviorSettings implements Serializable {
             return false;
         } else if (iAmAPirate != that.iAmAPirate) {
             return false;
+        } else if (allowSurrender != that.allowSurrender) {
+            return false;
+        } else if (resolveIndex != that.resolveIndex) {
+            return false;
         } else if (ignoreDamageOutput != that.ignoreDamageOutput) {
             return false;
         }
@@ -1305,6 +1379,8 @@ public class BehaviorSettings implements Serializable {
         result = 31 * result + (exclusiveMutualSupport ? 1 : 0);
         result = 31 * result + combatPosture.hashCode();
         result = 31 * result + (iAmAPirate ? 1 : 0);
+        result = 31 * result + (allowSurrender ? 1 : 0);
+        result = 31 * result + resolveIndex;
         result = 31 * result + (experimental ? 1 : 0);
         result = 31 * result + (ignoreDamageOutput ? 1 : 0);
         return result;

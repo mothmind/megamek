@@ -228,6 +228,11 @@ public class Princess extends BotClient {
     private final Set<Integer> unitsScootingToHex = new HashSet<>();
     private final Set<Integer> designatedTagTargets = new HashSet<>();
     private final MoraleUtil moraleUtil = new MoraleUtil();
+    private SurrenderUtil surrenderUtil = new SurrenderUtil();
+    private int lastSurrenderCheckRound = 0;
+    private boolean surrenderOffered = false;
+    private int surrenderOfferedRound = 0;
+    private static final int SURRENDER_REMINDER_INTERVAL = 3;
     private final Set<Integer> attackedWhileFleeing = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Integer> crippledUnits = new HashSet<>();
     private final ArtilleryCommandAndControl artilleryCommandAndControl = new ArtilleryCommandAndControl();
@@ -3097,6 +3102,50 @@ public class Princess extends BotClient {
         return moraleUtil;
     }
 
+    void setSurrenderUtil(final SurrenderUtil surrenderUtil) {
+        this.surrenderUtil = surrenderUtil;
+    }
+
+    /**
+     * Once per round, decides whether to offer surrender. The offer is the plain {@code /defeat} chat command, which
+     * the server answers with "wants to admit defeat - type /victory to accept"; when an enemy does, the existing
+     * {@link ChatProcessor} handling sends the second {@code /defeat} that actually ends the game. Until then the
+     * force keeps fighting as normal. The offer is repeated every few rounds so it is not lost in the chat.
+     *
+     * @param round The round this check belongs to. A round is only ever evaluated once, so the check can be
+     *              driven from both the end report and the following movement phase without double rolling.
+     */
+    void checkForSurrender(final int round) {
+        if (round <= lastSurrenderCheckRound) {
+            return;
+        }
+        lastSurrenderCheckRound = round;
+
+        try {
+            if (!getBehaviorSettings().isAllowSurrender()) {
+                return;
+            }
+
+            if (surrenderOffered) {
+                if (round - surrenderOfferedRound >= SURRENDER_REMINDER_INTERVAL) {
+                    surrenderOfferedRound = round;
+                    sendChat(Messages.getString("Princess.surrender.reminder"));
+                    sendChat("/defeat");
+                }
+                return;
+            }
+
+            if (surrenderUtil.shouldSurrender(getBehaviorSettings().getResolveIndex(), getLocalPlayer(), getGame())) {
+                surrenderOffered = true;
+                surrenderOfferedRound = round;
+                sendChat(Messages.getString("Princess.surrender.offer"));
+                sendChat("/defeat");
+            }
+        } catch (final Exception e) {
+            LOGGER.error(e, "Surrender check failed");
+        }
+    }
+
     /**
      * Logic to determine if this entity is "falling back" for any reason
      *
@@ -3730,6 +3779,9 @@ public class Princess extends BotClient {
     protected void initMovement() {
         try {
             initialize();
+            // The server skips the end report on quiet rounds and endOfTurnProcessing() with it; nothing has
+            // changed since that end phase but initiative, so the previous round is judged here instead.
+            checkForSurrender(getGame().getRoundCount() - 1);
             checkMorale();
             unitBehaviorTracker.clear();
             swarmContext.assignClusters(getEntitiesOwned());
@@ -4193,6 +4245,7 @@ public class Princess extends BotClient {
         updateEnemyHeatMaps();
         updateFriendlyHeatMap();
         updateExperimentalFeatures();
+        checkForSurrender(getGame().getRoundCount());
     }
 
     /**

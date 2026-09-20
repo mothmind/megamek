@@ -131,6 +131,8 @@ public class BotConfigDialog extends AbstractButtonDialog
 
     private final MMToggleButton iAmAPirateCheck =
           new TipMMToggleButton(Messages.getString("BotConfigDialog.iAmAPirateCheck"));
+    private final MMToggleButton allowSurrenderCheck =
+          new TipMMToggleButton(Messages.getString("BotConfigDialog.allowSurrenderCheck"));
     private final MMToggleButton ignoreDamageOutputCheck =
           new TipMMToggleButton(Messages.getString("BotConfigDialog.ignoreDamageOutput"));
     private final MMToggleButton exclusiveMutualSupportCheck =
@@ -152,6 +154,7 @@ public class BotConfigDialog extends AbstractButtonDialog
     private final TipSlider mutualSupportSlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 5);
     private final TipSlider selfPreservationSlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 5);
     private final TipSlider braverySlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 5);
+    private final TipSlider resolveSlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 5);
     private final TipSlider antiCrowdingSlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 0);
     private final TipSlider favorHigherTMMSlidebar = new TipSlider(SwingConstants.HORIZONTAL, 0, 10, 0);
     private final TipSlider numberOfEnemiesToConsiderFacingSlidebar = new TipSlider(SwingConstants.HORIZONTAL,
@@ -416,6 +419,13 @@ public class BotConfigDialog extends AbstractButtonDialog
               "BotConfigDialog.braverySliderTitle"));
         panContent.add(Box.createVerticalStrut(7));
 
+        panContent.add(buildSliderWithDynamicTitle(resolveSlidebar,
+              Messages.getString("BotConfigDialog.resolveSliderMin"),
+              Messages.getString("BotConfigDialog.resolveSliderMax"),
+              Messages.getString("BotConfigDialog.resolveTooltip"),
+              "BotConfigDialog.resolveSliderTitle"));
+        panContent.add(Box.createVerticalStrut(7));
+
         panContent.add(buildSliderWithDynamicTitle(selfPreservationSlidebar,
               Messages.getString("BotConfigDialog.selfPreservationSliderMin"),
               Messages.getString("BotConfigDialog.selfPreservationSliderMax"),
@@ -490,6 +500,10 @@ public class BotConfigDialog extends AbstractButtonDialog
         iAmAPirateCheck.setToolTipText(Messages.getString("BotConfigDialog.iAmAPirateCheckToolTip"));
         iAmAPirateCheck.addActionListener(this);
         panContent.add(iAmAPirateCheck);
+
+        allowSurrenderCheck.setToolTipText(Messages.getString("BotConfigDialog.allowSurrenderCheckToolTip"));
+        allowSurrenderCheck.addActionListener(this);
+        panContent.add(allowSurrenderCheck);
 
         ignoreDamageOutputCheck.setToolTipText(Messages.getString("BotConfigDialog.ignoreDamageOutputToolTip"));
         ignoreDamageOutputCheck.addActionListener(this);
@@ -622,6 +636,8 @@ public class BotConfigDialog extends AbstractButtonDialog
         favorHigherTMMSlidebar.setValue(princessBehavior.getFavorHigherTMM());
         exclusiveMutualSupportCheck.setSelected(princessBehavior.isExclusiveMutualSupport());
         iAmAPirateCheck.setSelected(princessBehavior.iAmAPirate());
+        allowSurrenderCheck.setSelected(princessBehavior.isAllowSurrender());
+        resolveSlidebar.setValue(princessBehavior.getResolveIndex());
         experimentalCheck.setSelected(princessBehavior.isExperimental());
         numberOfEnemiesToConsiderFacingSlidebar.setValue(princessBehavior.getNumberOfEnemiesToConsiderFacing());
         allowFacingToleranceSlidebar.setValue(princessBehavior.getAllowFacingTolerance());
@@ -662,6 +678,7 @@ public class BotConfigDialog extends AbstractButtonDialog
         fleeEdgeCombo.setEnabled(autoFleeCheck.isSelected());
         withdrawEdgeLabel.setEnabled(forcedWithdrawalCheck.isSelected());
         withdrawEdgeCombo.setEnabled(forcedWithdrawalCheck.isSelected());
+        resolveSlidebar.setEnabled(allowSurrenderCheck.isSelected());
         savePreset.setEnabled(isChangedPreset());
         removeTargetButton.setEnabled(!targetsList.isSelectionEmpty());
     }
@@ -679,6 +696,8 @@ public class BotConfigDialog extends AbstractButtonDialog
                     chosenPreset.getAntiCrowding() != antiCrowdingSlidebar.getValue() ||
                     chosenPreset.getFavorHigherTMM() != favorHigherTMMSlidebar.getValue() ||
                     chosenPreset.iAmAPirate() != iAmAPirateCheck.isSelected() ||
+                    chosenPreset.isAllowSurrender() != allowSurrenderCheck.isSelected() ||
+                    chosenPreset.getResolveIndex() != resolveSlidebar.getValue() ||
                     chosenPreset.isExclusiveMutualSupport() != exclusiveMutualSupportCheck.isSelected() ||
                     chosenPreset.getCombatPosture() != postureCombo.getSelectedItem() ||
                     chosenPreset.getNumberOfEnemiesToConsiderFacing()
@@ -808,6 +827,9 @@ public class BotConfigDialog extends AbstractButtonDialog
         } else if (e.getSource() == forcedWithdrawalCheck) {
             updateEnabledStates();
 
+        } else if (e.getSource() == allowSurrenderCheck) {
+            updateEnabledStates();
+
         } else if (e.getSource() == princessHelpButton) {
             showPrincessHelp();
 
@@ -868,6 +890,8 @@ public class BotConfigDialog extends AbstractButtonDialog
         newBehavior.setNumberOfEnemiesToConsiderFacing(numberOfEnemiesToConsiderFacingSlidebar.getValue());
         newBehavior.setAllowFacingTolerance(allowFacingToleranceSlidebar.getValue());
         newBehavior.setIAmAPirate(iAmAPirateCheck.isSelected());
+        newBehavior.setAllowSurrender(allowSurrenderCheck.isSelected());
+        newBehavior.setResolveIndex(resolveSlidebar.getValue());
         newBehavior.setExclusiveMutualSupport(exclusiveMutualSupportCheck.isSelected());
         newBehavior.setCombatPosture(postureCombo.getSelectedItem());
         newBehavior.setExperimental(experimentalCheck.isSelected());
@@ -918,6 +942,8 @@ public class BotConfigDialog extends AbstractButtonDialog
         tempBehavior.setNumberOfEnemiesToConsiderFacing(numberOfEnemiesToConsiderFacingSlidebar.getValue());
         tempBehavior.setAllowFacingTolerance(allowFacingToleranceSlidebar.getValue());
         tempBehavior.setIAmAPirate(iAmAPirateCheck.isSelected());
+        tempBehavior.setAllowSurrender(allowSurrenderCheck.isSelected());
+        tempBehavior.setResolveIndex(resolveSlidebar.getValue());
         tempBehavior.setExclusiveMutualSupport(exclusiveMutualSupportCheck.isSelected());
         tempBehavior.setCombatPosture(postureCombo.getSelectedItem());
         tempBehavior.setExperimental(experimentalCheck.isSelected());

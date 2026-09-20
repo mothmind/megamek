@@ -90,7 +90,7 @@ public class ChatProcessor {
             }
             for (Player p : bot.getGame().getPlayersList()) {
                 if (p.getName().contentEquals(name)) {
-                    if (p.isEnemyOf(bot.getLocalPlayer())) {
+                    if (p.isEnemyOf(bot.getLocalPlayer()) && !hasHumanTeammate(bot)) {
                         bot.sendChat("/victory");
                         result = true;
                     }
@@ -100,6 +100,20 @@ public class ChatProcessor {
         }
 
         return result;
+    }
+
+    /**
+     * A bot only accepts an enemy's surrender on behalf of its side when no human shares that side; otherwise the
+     * offer would be taken the moment it is made and the human never gets to decide.
+     */
+    private boolean hasHumanTeammate(BotClient bot) {
+        Player me = bot.getLocalPlayer();
+        for (Player p : bot.getGame().getPlayersList()) {
+            if ((p.getId() != me.getId()) && !p.isBot() && !p.isObserver() && !p.isEnemyOf(me)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void processChat(GamePlayerChatEvent ge, BotClient bot) {

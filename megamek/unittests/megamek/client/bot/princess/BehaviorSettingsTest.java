@@ -35,6 +35,7 @@ package megamek.client.bot.princess;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -100,6 +101,43 @@ class BehaviorSettingsTest {
         assertFalse(behaviorSettings.isExclusiveMutualSupport(), "the string overload must delegate too");
         behaviorSettings.setExclusiveMutualSupport("true");
         assertTrue(behaviorSettings.isExclusiveHerding(), "including the new string overload, read the old way");
+    }
+
+    @Test
+    void surrenderSettingsDefaultOffAndSurviveCopyAndXml() throws Exception {
+        BehaviorSettings behaviorSettings = new BehaviorSettings();
+        assertFalse(behaviorSettings.isAllowSurrender(), "surrender is off unless somebody turns it on");
+        assertEquals(5, behaviorSettings.getResolveIndex(), "resolve starts at the slider midpoint");
+
+        behaviorSettings.setAllowSurrender(true);
+        behaviorSettings.setResolveIndex(8);
+        BehaviorSettings copy = behaviorSettings.getCopy();
+        assertTrue(copy.isAllowSurrender(), "getCopy must carry the switch");
+        assertEquals(8, copy.getResolveIndex(), "getCopy must carry the resolve");
+        assertEquals(behaviorSettings, copy);
+        assertEquals(behaviorSettings.hashCode(), copy.hashCode());
+
+        copy.setResolveIndex(7);
+        assertNotEquals(behaviorSettings, copy, "resolve takes part in equals");
+        copy.setResolveIndex(8);
+        copy.setAllowSurrender(false);
+        assertNotEquals(behaviorSettings, copy, "the switch takes part in equals");
+
+        behaviorSettings.setResolveIndex(15);
+        assertEquals(10, behaviorSettings.getResolveIndex(), "resolve clamps to the slider");
+        behaviorSettings.setResolveIndex(-1);
+        assertEquals(0, behaviorSettings.getResolveIndex());
+        behaviorSettings.setResolveIndex("3");
+        assertEquals(3, behaviorSettings.getResolveIndex(), "the string setter parses");
+        behaviorSettings.setAllowSurrender("TRUE");
+        assertTrue(behaviorSettings.isAllowSurrender(), "the string setter parses case-insensitively");
+
+        DocumentBuilder documentBuilder = MMXMLUtility.newSafeDocumentBuilder();
+        Document document = documentBuilder.newDocument();
+        Element behaviorElement = behaviorSettings.toXml(document, false);
+        BehaviorSettings reloaded = new BehaviorSettings(behaviorElement);
+        assertTrue(reloaded.isAllowSurrender(), "toXml/fromXml must round-trip the switch");
+        assertEquals(3, reloaded.getResolveIndex(), "toXml/fromXml must round-trip the resolve");
     }
 
     @Test
