@@ -234,7 +234,8 @@ public class Princess extends BotClient {
     private int surrenderOfferedRound = 0;
     private static final int SURRENDER_REMINDER_INTERVAL = 3;
     private OrbitalStrikeControl orbitalStrikeControl = new OrbitalStrikeControl();
-    private int lastOrbitalStrikeRound = 0;
+    /** Starts below any real round so the first targeting turn is not skipped by the once-per-round guard. */
+    private int lastOrbitalStrikeRound = -1;
     private final Set<Integer> attackedWhileFleeing = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Integer> crippledUnits = new HashSet<>();
     private final ArtilleryCommandAndControl artilleryCommandAndControl = new ArtilleryCommandAndControl();
@@ -1791,6 +1792,11 @@ public class Princess extends BotClient {
      */
     @Override
     protected void calculateTargetingOffBoardTurn() {
+        // Declared from the turn rather than from initTargeting: the enemy list is rebuilt per turn, so at
+        // phase-change time it is either empty or left over from the previous phase. An orbital strike needs no
+        // entity of its own, so this runs before the entity checks below.
+        checkForOrbitalStrike(getGame().getRoundCount());
+
         Entity entityToFire = getGame().getFirstEntity(getMyTurn());
 
         if (entityToFire == null) {
@@ -3154,11 +3160,14 @@ public class Princess extends BotClient {
 
     /**
      * Once per round, decides whether to call down the bombardment offered by a JumpShip or WarShip supporting this
-     * force from orbit. The request is the plain {@code /orbitalstrike} chat command, which the server answers by
-     * scheduling the strike and spending one of the ship's shots; it lands at the end of this firing phase.
+     * force from orbit.
      *
-     * <p>Driven from the firing phase rather than from movement so the aim point is chosen against final positions.
-     * A ship with nothing worth hitting holds its fire, so unused strikes stay available for a later round.</p>
+     * <p>Driven from the targeting phase, which is where orbital fire is declared: the shot is committed before
+     * anyone moves and lands later, and that pre-commitment is the whole risk of calling one. The request goes over
+     * the same ORBITAL_STRIKE packet a human player's window uses - not the {@code /orbitalstrike} chat command,
+     * which is game master only and would simply refuse a bot.</p>
+     *
+     * <p>A ship with nothing worth hitting holds its fire, so unused bays stay available for a later round.</p>
      *
      * @param round The round this check belongs to. A round is only ever evaluated once, so a strike cannot be
      *              called twice in the same round.
@@ -3176,6 +3185,8 @@ public class Princess extends BotClient {
 
             final OrbitalSupport support = getLocalPlayer().getOrbitalSupport();
             if (!support.isAvailable()) {
+                LOGGER.info("{}: no orbital support available this round ({} bay(s) loaded).",
+                      getLocalPlayer().getName(), support.strikesRemaining());
                 return;
             }
 
@@ -3185,9 +3196,9 @@ public class Princess extends BotClient {
                       support.shipName(),
                       bayName,
                       target.getBoardNum()));
-                // Hexes are 1-based in chat commands and 0-based internally. The bay is named explicitly so the
-                // server fires the one the targeting scored against, not whichever it would pick by default.
-                sendChat("/orbitalstrike " + (target.getX() + 1) + " " + (target.getY() + 1) + " " + bayName);
+                // The bay is named explicitly so the server fires the one the targeting scored against, rather than
+                // whichever it would pick by default.
+                sendOrbitalStrike(target, bayName);
             });
         } catch (final Exception e) {
             LOGGER.error(e, "Orbital strike check failed");
@@ -3568,7 +3579,6 @@ public class Princess extends BotClient {
     protected void initFiring() {
         try {
             initialize();
-            checkForOrbitalStrike(getGame().getRoundCount());
 
             // ----Debugging: print out any errors made in guessing to hit
             // values-----

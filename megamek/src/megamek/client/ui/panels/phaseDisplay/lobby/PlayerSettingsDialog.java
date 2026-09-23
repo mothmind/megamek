@@ -82,6 +82,16 @@ import megamek.client.ui.util.UIUtil.TipButton;
 import megamek.client.ui.util.UIUtil.TipLabel;
 import megamek.client.ui.util.UIUtil.TipTextField;
 import megamek.common.OffBoardDirection;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import javax.swing.DefaultCellEditor;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
+import javax.swing.ListSelectionModel;
+import javax.swing.table.DefaultTableModel;
+import megamek.common.OrbitalBay.WeaponClass;
 import megamek.common.OrbitalBay;
 import megamek.common.OrbitalSupport;
 import megamek.common.Player;
@@ -327,12 +337,23 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
     private final JLabel labOrbitalShip = new JLabel(getString("PlayerSettingsDialog.labOrbitalShip"),
           SwingConstants.RIGHT);
     private final JTextField fldOrbitalShip = new JTextField(10);
-    private final JLabel labOrbitalBays = new JLabel(getString("PlayerSettingsDialog.labOrbitalBays"),
-          SwingConstants.RIGHT);
-    private final JTextField fldOrbitalBays = new JTextField(3);
-    private final JLabel labOrbitalAV = new JLabel(getString("PlayerSettingsDialog.labOrbitalAV"),
-          SwingConstants.RIGHT);
-    private final JTextField fldOrbitalAV = new JTextField(3);
+    /**
+     * One row per naval bay: name, Attack Value, and what kind of guns it holds. Bays are listed individually rather
+     * than as a count and a shared value, because a real ship carries different bays and the weapon type decides how
+     * long that bay's fire takes to reach the surface.
+     */
+    private final DefaultTableModel orbitalBayModel = new DefaultTableModel(
+          new Object[] { getString("PlayerSettingsDialog.orbitalCol.name"),
+                         getString("PlayerSettingsDialog.orbitalCol.av"),
+                         getString("PlayerSettingsDialog.orbitalCol.type") }, 0) {
+        @Override
+        public Class<?> getColumnClass(int column) {
+            return (column == 1) ? Integer.class : String.class;
+        }
+    };
+    private final JTable orbitalBayTable = new JTable(orbitalBayModel);
+    private final JButton btnOrbitalAddBay = new JButton(getString("PlayerSettingsDialog.orbitalAddBay"));
+    private final JButton btnOrbitalRemoveBay = new JButton(getString("PlayerSettingsDialog.orbitalRemoveBay"));
     private final JLabel labOrbitalGunnery = new JLabel(getString("PlayerSettingsDialog.labOrbitalGunnery"),
           SwingConstants.RIGHT);
     private final JTextField fldOrbitalGunnery = new JTextField(3);
@@ -780,9 +801,27 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
             return;
         }
 
-        int bayCount = parseField(fldOrbitalBays);
-        int attackValue = parseField(fldOrbitalAV);
-        if ((bayCount <= 0) || (attackValue <= 0)) {
+        // Stop any cell still being edited, or the row the player just typed into is read at its old value.
+        if (orbitalBayTable.isEditing()) {
+            orbitalBayTable.getCellEditor().stopCellEditing();
+        }
+
+        List<OrbitalBay> bays = new ArrayList<>();
+        for (int row = 0; row < orbitalBayModel.getRowCount(); row++) {
+            int attackValue = parseInteger(orbitalBayModel.getValueAt(row, 1));
+            if (attackValue <= 0) {
+                continue;
+            }
+
+            Object name = orbitalBayModel.getValueAt(row, 0);
+            String bayName = ((name == null) || name.toString().isBlank())
+                  ? Messages.getString("PlayerSettingsDialog.orbitalBayName", row + 1)
+                  : name.toString().trim();
+
+            bays.add(new OrbitalBay(bayName, attackValue, parseWeaponClass(orbitalBayModel.getValueAt(row, 2))));
+        }
+
+        if (bays.isEmpty()) {
             player.setOrbitalSupport(OrbitalSupport.NONE);
             return;
         }
@@ -790,12 +829,6 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
         String shipName = fldOrbitalShip.getText().isBlank()
               ? Messages.getString("PlayerSettingsDialog.orbitalDefaultShip")
               : fldOrbitalShip.getText().trim();
-
-        List<OrbitalBay> bays = new ArrayList<>();
-        for (int i = 1; i <= bayCount; i++) {
-            // Numbered so a player can name one at the /orbitalstrike prompt and tell them apart in reports.
-            bays.add(new OrbitalBay(Messages.getString("PlayerSettingsDialog.orbitalBayName", i), attackValue));
-        }
 
         // A blank or nonsense skill falls back to Regular rather than handing out a free bullseye.
         int gunnery = parseField(fldOrbitalGunnery);
@@ -805,27 +838,87 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
         player.setOrbitalSupport(new OrbitalSupport(shipName, bays, gunnery));
     }
 
+    /** @return The cell's value as an int, or 0 when it is blank or not a number */
+    private int parseInteger(Object value) {
+        if (value instanceof Integer integer) {
+            return integer;
+        }
+        try {
+            return (value == null) ? 0 : Integer.parseInt(value.toString().trim());
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    /** @return The named weapon class, falling back to ballistic for anything unrecognised */
+    private WeaponClass parseWeaponClass(Object value) {
+        if (value == null) {
+            return WeaponClass.BALLISTIC;
+        }
+        try {
+            return WeaponClass.valueOf(value.toString().trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return WeaponClass.BALLISTIC;
+        }
+    }
+
     private JPanel orbitalSection() {
         JPanel result = new OptionPanel("PlayerSettingsDialog.header.orbital");
-        Content panContent = new Content(new GridLayout(4, 2, 10, 5));
+        Content panContent = new Content(new BorderLayout(6, 6));
         result.add(panContent);
 
         String tooltip = Messages.getString("PlayerSettingsDialog.orbitalTT");
-        for (JComponent component : new JComponent[] { labOrbitalShip, fldOrbitalShip, labOrbitalBays, fldOrbitalBays,
-                                                       labOrbitalAV, fldOrbitalAV, labOrbitalGunnery,
-                                                       fldOrbitalGunnery }) {
+        for (JComponent component : new JComponent[] { labOrbitalShip, fldOrbitalShip, labOrbitalGunnery,
+                                                       fldOrbitalGunnery, orbitalBayTable }) {
             component.setToolTipText(tooltip);
         }
 
-        panContent.add(labOrbitalShip);
-        panContent.add(fldOrbitalShip);
-        panContent.add(labOrbitalBays);
-        panContent.add(fldOrbitalBays);
-        panContent.add(labOrbitalAV);
-        panContent.add(fldOrbitalAV);
-        panContent.add(labOrbitalGunnery);
-        panContent.add(fldOrbitalGunnery);
+        JPanel ship = new JPanel(new GridLayout(2, 2, 10, 5));
+        ship.add(labOrbitalShip);
+        ship.add(fldOrbitalShip);
+        ship.add(labOrbitalGunnery);
+        ship.add(fldOrbitalGunnery);
+
+        // The type column is a fixed choice, so it is edited with a combo rather than free text a player could
+        // mistype into a silently ballistic bay.
+        JComboBox<String> typeEditor = new JComboBox<>();
+        for (WeaponClass weaponClass : WeaponClass.values()) {
+            typeEditor.addItem(weaponClass.name());
+        }
+        orbitalBayTable.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(typeEditor));
+        orbitalBayTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        orbitalBayTable.setPreferredScrollableViewportSize(new Dimension(320, 90));
+
+        btnOrbitalAddBay.addActionListener(e -> orbitalBayModel.addRow(new Object[] {
+              Messages.getString("PlayerSettingsDialog.orbitalBayName", orbitalBayModel.getRowCount() + 1),
+              20,
+              WeaponClass.BALLISTIC.name() }));
+        btnOrbitalRemoveBay.addActionListener(e -> {
+            int row = orbitalBayTable.getSelectedRow();
+            if (row >= 0) {
+                orbitalBayModel.removeRow(row);
+            }
+        });
+
+        JPanel buttons = new JPanel();
+        buttons.add(btnOrbitalAddBay);
+        buttons.add(btnOrbitalRemoveBay);
+
+        panContent.add(ship, BorderLayout.NORTH);
+        panContent.add(new JScrollPane(orbitalBayTable), BorderLayout.CENTER);
+        panContent.add(buttons, BorderLayout.SOUTH);
         return result;
+    }
+
+    /** Fills the bay table from whatever the player already has, so reopening the dialog does not lose it. */
+    private void loadOrbitalBays() {
+        orbitalBayModel.setRowCount(0);
+        OrbitalSupport support = player.getOrbitalSupport();
+        fldOrbitalShip.setText(support.shipName());
+        fldOrbitalGunnery.setText(String.valueOf(support.gunnery()));
+        for (OrbitalBay bay : support.bays()) {
+            orbitalBayModel.addRow(new Object[] { bay.name(), bay.attackValue(), bay.weaponClass().name() });
+        }
     }
 
     private JPanel mineSection() {
@@ -940,6 +1033,8 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
         spinStartingAnySEx.setValue(x);
         y = Math.min(player.getStartingAnySEy() + 1, bh);
         spinStartingAnySEy.setValue(y);
+
+        loadOrbitalBays();
     }
 
     private void setupStartGrid() {

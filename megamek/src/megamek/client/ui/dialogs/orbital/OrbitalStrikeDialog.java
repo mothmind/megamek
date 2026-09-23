@@ -141,6 +141,23 @@ public class OrbitalStrikeDialog extends JDialog {
         lblStatus.setText(targeting ? "" : Messages.getString("OrbitalStrikeDialog.notTargeting"));
     }
 
+    /**
+     * Points the window at a hex chosen on the board, so a player can right-click a target instead of reading its
+     * coordinates off the map and typing them. The hex is only loaded into the fields; nothing is fired until the
+     * player presses the button.
+     *
+     * @param coords The hex to aim at, in internal 0-based coordinates
+     */
+    public void setTarget(Coords coords) {
+        if (coords == null) {
+            return;
+        }
+        // Board numbers shown to players are 1-based, internal coordinates are 0-based.
+        spnX.setValue(coords.getX() + 1);
+        spnY.setValue(coords.getY() + 1);
+        update();
+    }
+
     /** @return A short note on when this bay's fire would land, since that is the risk in calling it. */
     private String arrivalText(OrbitalBay bay) {
         return switch (bay.weaponClass()) {

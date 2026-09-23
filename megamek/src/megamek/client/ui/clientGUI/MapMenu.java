@@ -142,6 +142,16 @@ public class MapMenu extends JPopupMenu {
         addIfNotEmpty(createSelectMenu());
         addIfNotEmpty(createViewMenu());
 
+        // Deliberately outside the my-turn-and-my-unit guard below: an orbital strike belongs to no unit on the
+        // board, so it must be offered to a supported player whatever unit happens to be selected.
+        JMenuItem orbitalStrike = createOrbitalStrikeMenuItem();
+        if (orbitalStrike != null) {
+            if (getComponentCount() > 0) {
+                addSeparator();
+            }
+            add(orbitalStrike);
+        }
+
         if (client.isMyTurn() && (myEntity != null)) {
             selectTarget();
             addIfNotEmpty(createTargetMenu());
@@ -221,6 +231,25 @@ public class MapMenu extends JPopupMenu {
         } catch (Exception e) {
             // This is only for GUI beauty, it should not ever fail
         }
+    }
+
+    /**
+     * @return An item sending this hex to the orbital bombardment window, or null when the player has no bays to
+     *       fire or the rule is off. It only loads the hex; the player still chooses a bay and presses the button.
+     */
+    private JMenuItem createOrbitalStrikeMenuItem() {
+        if (!game.getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)) {
+            return null;
+        }
+
+        Player localPlayer = client.getLocalPlayer();
+        if ((localPlayer == null) || !localPlayer.getOrbitalSupport().isAvailable()) {
+            return null;
+        }
+
+        JMenuItem item = new JMenuItem(Messages.getString("MapMenu.orbitalStrikeTarget", coords.getBoardNum()));
+        item.addActionListener(e -> gui.sendHexToOrbitalStrikeDialog(coords));
+        return item;
     }
 
     private JMenuItem targetMenuItem(Targetable t) {

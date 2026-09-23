@@ -264,6 +264,8 @@ public class CommonSettingsDialog extends AbstractButtonDialog
     private final JCheckBox spritesOnly = new JCheckBox(Messages.getString(
         "CommonSettingsDialog.spritesOnly"));
     private final JCheckBox showDamageLevel = new JCheckBox(Messages.getString("CommonSettingsDialog.showDamageLevel"));
+    private final JCheckBox chkOrbitalStrikeAutoOpen =
+          new JCheckBox(Messages.getString("CommonSettingsDialog.orbitalStrikeAutoOpen"));
     private final JCheckBox showDamageDecal = new JCheckBox(Messages.getString("CommonSettingsDialog.showDamageDecal"));
     private final JCheckBox showMapSheets = new JCheckBox(Messages.getString("CommonSettingsDialog.showMapsheets"));
     private final JCheckBox aOHexShadows = new JCheckBox(Messages.getString("CommonSettingsDialog.aOHexSHadows"));
@@ -1098,6 +1100,8 @@ public class CommonSettingsDialog extends AbstractButtonDialog
 
         List.of(showDamageLevel, showDamageDecal, showUnitId)
             .forEach(checkBox -> configureCheckBox(checkBox, null));
+        configureCheckBox(chkOrbitalStrikeAutoOpen,
+              Messages.getString("CommonSettingsDialog.orbitalStrikeAutoOpen.tooltip"));
         configureCheckBox(entityOwnerColor, Messages.getString("CommonSettingsDialog.entityOwnerColor.tooltip"));
         configureCheckBox(useSoftCenter, Messages.getString("CommonSettingsDialog.useSoftCenter.tooltip"));
         configureCheckBox(useAutoCenter, Messages.getString("CommonSettingsDialog.useAutoCenter.tooltip"));
@@ -1111,7 +1115,7 @@ public class CommonSettingsDialog extends AbstractButtonDialog
             "CommonSettingsDialog.colors.UnitSelectedColor"));
         csbUnitSelectedColor.setColour(GUIP.getUnitSelectedColor());
         comps.add(List.of(createGameBoardGroupedOptionGrid("CommonSettingsGameBoardUnitsGrid",
-              List.of(showDamageLevel, showDamageDecal, showUnitId, entityOwnerColor,
+              List.of(showDamageLevel, showDamageDecal, showUnitId, chkOrbitalStrikeAutoOpen, entityOwnerColor,
                     useSoftCenter, useAutoCenter, useAutoSelectNext),
             List.of(csbUnitTextColor, csbUnitValidColor, csbUnitSelectedColor))));
 
@@ -2761,6 +2765,7 @@ public class CommonSettingsDialog extends AbstractButtonDialog
             chkHighQualityGraphics.setSelected(GUIP.getHighQualityGraphics());
             chkHighPerformanceGraphics.setSelected(GUIP.getHighPerformanceGraphics());
             showDamageLevel.setSelected(GUIP.getShowDamageLevel());
+            chkOrbitalStrikeAutoOpen.setSelected(GUIP.getOrbitalStrikeAutoOpen());
             showDamageDecal.setSelected(GUIP.getShowDamageDecal());
             aOHexShadows.setSelected(GUIP.getAOHexShadows());
             floatingIso.setSelected(GUIP.getFloatingIso());
@@ -3097,6 +3102,7 @@ public class CommonSettingsDialog extends AbstractButtonDialog
     @Override
     protected void okAction() {
         GUIP.setShowDamageLevel(showDamageLevel.isSelected());
+        GUIP.setOrbitalStrikeAutoOpen(chkOrbitalStrikeAutoOpen.isSelected());
         GUIP.setShowDamageDecal(showDamageDecal.isSelected());
         GUIP.setUnitLabelBorder(entityOwnerColor.isSelected());
         GUIP.setTeamColoring(teamColoring.isSelected());

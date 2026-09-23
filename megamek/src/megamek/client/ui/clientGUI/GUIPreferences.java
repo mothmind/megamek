@@ -371,6 +371,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
     public static final String PLAYER_LIST_AUTO_DISPLAY_NON_REPORT_PHASE = "PlayerListAutoDisplayNonReportPhase";
     public static final String MINI_MAP_COLOURS = "MinimapColours";
     public static final String MINI_MAP_ENABLED = "MinimapEnabled";
+    public static final String ORBITAL_STRIKE_AUTO_OPEN = "OrbitalStrikeAutoOpen";
     public static final String MINI_MAP_POS_X = "MinimapPosX";
     public static final String MINI_MAP_POS_Y = "MinimapPosY";
     public static final String MINI_MAP_ZOOM = "MinimapZoom";
@@ -869,6 +870,7 @@ public class GUIPreferences extends PreferenceStoreProxy {
 
         store.setDefault(MINI_MAP_COLOURS, "defaultminimap.txt");
         store.setDefault(MINI_MAP_ENABLED, true);
+        store.setDefault(ORBITAL_STRIKE_AUTO_OPEN, true);
         store.setDefault(MINI_MAP_AUTO_DISPLAY_REPORT_PHASE, 0);
         store.setDefault(MINI_MAP_AUTO_DISPLAY_NON_REPORT_PHASE, 1);
         store.setDefault(MINI_MAP_SHOW_SENSOR_RANGE, true);
@@ -1505,6 +1507,15 @@ public class GUIPreferences extends PreferenceStoreProxy {
     @Deprecated(since = "0.51.0", forRemoval = true)
     public String getMinimapColours() {
         return store.getString(MINI_MAP_COLOURS);
+    }
+
+    /**
+     * @return Whether the orbital bombardment window opens by itself when the targeting phase begins. On by default,
+     *       since a player who has bays loaded almost always wants it; off for anyone who would rather open it from
+     *       the View menu.
+     */
+    public boolean getOrbitalStrikeAutoOpen() {
+        return store.getBoolean(ORBITAL_STRIKE_AUTO_OPEN);
     }
 
     public boolean getMinimapEnabled() {
@@ -2504,6 +2515,10 @@ public class GUIPreferences extends PreferenceStoreProxy {
 
     public void setRndArmyPosY(int i) {
         store.setValue(RND_ARMY_POS_Y, i);
+    }
+
+    public void setOrbitalStrikeAutoOpen(boolean b) {
+        store.setValue(ORBITAL_STRIKE_AUTO_OPEN, b);
     }
 
     public void setMinimapEnabled(boolean b) {

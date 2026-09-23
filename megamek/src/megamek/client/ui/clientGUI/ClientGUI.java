@@ -774,6 +774,42 @@ public class ClientGUI extends AbstractClientGUI
         }
     }
 
+    /**
+     * Opens the orbital bombardment window when the targeting phase begins, for a player who actually has bays to
+     * fire. The window is where strikes are called from, so a player with support would otherwise have to remember
+     * to open it every round. Suppressed by the OrbitalStrikeAutoOpen client setting, and never forced back open on
+     * a player who has closed it during the same phase.
+     */
+    private void openOrbitalStrikeDialogForTargeting() {
+        if (!GUIP.getOrbitalStrikeAutoOpen()
+              || (client == null)
+              || (client.getLocalPlayer() == null)
+              || !client.getGame().getPhase().isTargeting()
+              || !client.getLocalPlayer().getOrbitalSupport().isAvailable()) {
+            return;
+        }
+
+        if (orbitalStrikeDialog == null) {
+            orbitalStrikeDialog = new OrbitalStrikeDialog(frame, this);
+        }
+        if (!orbitalStrikeDialog.isVisible()) {
+            orbitalStrikeDialog.setVisible(true);
+        }
+        orbitalStrikeDialog.update();
+    }
+
+    /**
+     * Sends a hex picked on the board to the orbital bombardment window, opening it if it was closed. Typing
+     * coordinates still works; this is the shortcut for a target you can see.
+     */
+    public void sendHexToOrbitalStrikeDialog(Coords coords) {
+        if (orbitalStrikeDialog == null) {
+            orbitalStrikeDialog = new OrbitalStrikeDialog(frame, this);
+        }
+        orbitalStrikeDialog.setVisible(true);
+        orbitalStrikeDialog.setTarget(coords);
+    }
+
     /** Refreshes the orbital window when one exists; a no-op otherwise. */
     private void refreshOrbitalStrikeDialog() {
         if (orbitalStrikeDialog != null) {
@@ -3337,6 +3373,7 @@ public class ClientGUI extends AbstractClientGUI
         public void gamePhaseChange(GamePhaseChangeEvent e) {
             // The window enables firing only during targeting, and bays change between phases.
             refreshOrbitalStrikeDialog();
+            openOrbitalStrikeDialogForTargeting();
             for (IBoardView bv : boardViews()) {
                 // This is a really lame place for this, but I couldn't find a
                 // better one without making massive changes (which didn't seem
