@@ -92,6 +92,7 @@ import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
 import javax.swing.table.DefaultTableModel;
 import megamek.common.OrbitalBay.WeaponClass;
+import megamek.logging.MMLogger;
 import megamek.common.OrbitalBay;
 import megamek.common.OrbitalSupport;
 import megamek.common.Player;
@@ -119,6 +120,8 @@ import megamek.server.ServerBoardHelper;
  * @author Simon (Juliez)
  */
 public class PlayerSettingsDialog extends AbstractButtonDialog {
+
+    private static final MMLogger LOGGER = MMLogger.create(PlayerSettingsDialog.class);
 
     private static final String CMD_ADD_GROUND_OBJECT = "CMD_ADD_GROUND_OBJECT";
     private static final String CMD_REMOVE_GROUND_OBJECT = "CMD_REMOVE_GROUND_OBJECT_%d";
@@ -1141,8 +1144,21 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
             }
         }
 
-        butText.get(currentPlayerStartPos).append(UIUtil.fontHTML(GUIPreferences.getInstance().getMyUnitColor()));
-        butText.get(currentPlayerStartPos).append("\u2B24</FONT>");
+        // The player's saved start position is not guaranteed to exist on this board. butStartPos holds the eleven
+        // fixed zones plus the custom deployment zones of the board actually loaded, so a position referring to a
+        // custom zone this board does not have - which a scenario launched from a campaign can easily produce -
+        // has no button and no entry here. Falling back to Any keeps the dialog usable instead of throwing while it
+        // is being built, which left the player unable to open their own settings at all.
+        if (!butText.containsKey(currentPlayerStartPos)) {
+            LOGGER.warn("Start position {} has no deployment zone on this board; falling back to Any.",
+                  currentPlayerStartPos);
+            currentPlayerStartPos = Board.START_ANY;
+        }
+
+        if (butText.containsKey(currentPlayerStartPos)) {
+            butText.get(currentPlayerStartPos).append(UIUtil.fontHTML(GUIPreferences.getInstance().getMyUnitColor()));
+            butText.get(currentPlayerStartPos).append("\u2B24</FONT>");
+        }
 
         if (Game.rulesManager.getRulesGame().restrictDeploymentWidth(player, currentPlayerStartPos)) {
             txtWidth.setEnabled(false);
