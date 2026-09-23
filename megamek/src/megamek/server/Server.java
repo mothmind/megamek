@@ -625,6 +625,10 @@ public class Server implements Runnable {
                 gamePlayer.setMinefieldCount(minefieldIndex, player.getMinefieldCount(minefieldIndex));
             }
 
+            // Orbital support is declared in the lobby like minefields are, and is trusted the same way. Without
+            // this the client's setting is silently discarded here and the player's bays never reach the game.
+            gamePlayer.setOrbitalSupport(player.getOrbitalSupport());
+
             gamePlayer.setNbrFortifiedHexes(player.getNbrFortifiedHexes());
             if (gamePlayer.getConstantInitBonus() != player.getConstantInitBonus()) {
                 sendServerChat("Player " +

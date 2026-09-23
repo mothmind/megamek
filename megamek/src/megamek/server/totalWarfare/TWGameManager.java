@@ -360,6 +360,7 @@ public class TWGameManager extends AbstractGameManager {
         commands.add(new NukeCommand(server, this));
         commands.add(new KillCommand(server, this));
         commands.add(new OrbitalBombardmentCommand(server, this));
+        commands.add(new OrbitalStrikeCommand(server, this));
         commands.add(new ChangeOwnershipCommand(server, this));
         commands.add(new SkillModifierCommand(server, this));
         commands.add(new DisasterCommand(server, this));
@@ -1115,6 +1116,9 @@ public class TWGameManager extends AbstractGameManager {
                     break;
                 case DEPLOY_MINEFIELDS:
                     receiveDeployMinefields(packet, connectionId);
+                    break;
+                case ORBITAL_STRIKE:
+                    receiveOrbitalStrike(packet, connectionId);
                     break;
                 case DEPLOY_FORTIFICATIONS:
                     receiveDeployFortifications(packet, connectionId);
@@ -19944,10 +19948,16 @@ public class TWGameManager extends AbstractGameManager {
      *                           its builder.
      */
     public void addScheduledOrbitalBombardment(OrbitalBombardment orbitalBombardment) {
+        // Name the supporting vessel when one is credited, so the crew can tell a friendly fire mission from an
+        // anonymous strike called by the game master.
+        String source = orbitalBombardment.getShipName().isBlank()
+              ? Messages.getString("OrbitalBombardment.source")
+              : orbitalBombardment.getShipName();
+
         Report r = new Report(1302);
         r.indent()
               .newLines(0)
-              .add(Messages.getString("OrbitalBombardment.source"))
+              .add(source)
               .add(orbitalBombardment.getCoords().getBoardNum());
         getMainPhaseReport().addElement(r);
         Report.addNewline(getMainPhaseReport());
@@ -19955,6 +19965,157 @@ public class TWGameManager extends AbstractGameManager {
         drawOrbitalBombardmentIncomingOnBoard(orbitalBombardment);
         scheduledOrbitalBombardment.add(orbitalBombardment);
         getGame().setOrbitalBombardmentVector(new Vector<>(scheduledOrbitalBombardment));
+    }
+
+    /**
+     * Calls an orbital bombardment on behalf of a player whose force is being supported from orbit by a JumpShip or
+     * WarShip armed with naval weapons. The supporting vessel is never placed on the board; the player simply spends
+     * one of the strikes it is willing to deliver, and the bombardment lands at the end of the firing phase like any
+     * other.
+     *
+     * <p>Availability is checked here rather than by the caller so that the bot and the chat command cannot disagree
+     * about whether a strike was legal.</p>
+     *
+     * @param player   The player calling the strike
+     * @param position The targeted hex
+     * @param bayName  The bay to fire, or null/blank to fire the heaviest still loaded
+     *
+     * @return The bay that fired, or null when the rule is switched off, the player has no supporting ship, every
+     *       bay is spent, the named bay is not available, or the hex is off the board.
+     */
+    /**
+     * Handles a player's request to fire one of their orbital bays, sent from the orbital bombardment window.
+     *
+     * <p>Every condition is checked here rather than in the window: the rule being on, the player having a ship, the
+     * named bay being loaded, and the hex being on the board. A refusal is reported privately to that player so the
+     * rest of the table is not told what they tried.</p>
+     */
+    private void receiveOrbitalStrike(Packet packet, int connectionId) {
+        Player player = getGame().getPlayer(connectionId);
+        if (player == null) {
+            return;
+        }
+
+        // Only during targeting: the shot is declared alongside artillery and lands out of the firing phase.
+        if (!getGame().getPhase().isTargeting()) {
+            sendServerChat(connectionId, Messages.getString("Orbital.strike.error.wrongPhase"));
+            return;
+        }
+
+        Coords coords = (Coords) packet.getObject(0);
+        String bayName = (String) packet.getObject(1);
+
+        OrbitalBay fired = callOrbitalSupportStrike(player, coords, bayName);
+        if (fired == null) {
+            sendServerChat(connectionId, Messages.getString("Orbital.strike.error.refused"));
+            return;
+        }
+
+        transmitPlayerUpdate(player);
+    }
+
+    /** The target hex is immobile, so the standard -4 applies (StratOps p.103). */
+    private static final int ORBITAL_IMMOBILE_HEX_MODIFIER = -4;
+
+    /** "TAG may be used to designate the target hex ... and if successful applies a -2 to-hit modifier." */
+    private static final int ORBITAL_TAG_MODIFIER = -2;
+
+    /** How many orbital strikes have been called on each hex, for the cumulative spotting bonus. */
+    private final Map<Coords, Integer> orbitalStrikesOnHex = new HashMap<>();
+
+    /** @return True when a successful TAG designates this hex. */
+    private boolean isHexTagged(Coords position) {
+        return getGame().getTagInfo()
+                     .stream()
+                     .anyMatch(tag -> !tag.missed
+                                            && (tag.target != null)
+                                            && position.equals(tag.target.getPosition()));
+    }
+
+    /** @return True when the calling player has a unit that can see the target hex. */
+    private boolean hasFriendlyLineOfSight(Player player, Coords position) {
+        return getGame().inGameTWEntities()
+                     .stream()
+                     .filter(entity -> !entity.getOwner().isEnemyOf(player))
+                     .filter(entity -> entity.getPosition() != null)
+                     .anyMatch(entity -> LosEffects.calculateLOS(getGame(),
+                           entity,
+                           new HexTarget(position, entity.getBoardId(), Targetable.TYPE_HEX_CLEAR)).canSee());
+    }
+
+    public OrbitalBay callOrbitalSupportStrike(Player player, Coords position, String bayName) {
+        if (!getGame().getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)
+              || (player == null)
+              || (position == null)) {
+            return null;
+        }
+
+        OrbitalSupport support = player.getOrbitalSupport();
+        if (!support.isAvailable() || !getGame().getBoard().contains(position)) {
+            return null;
+        }
+
+        // An unnamed request fires the heaviest bay still loaded; a named one fires exactly that bay, so a player who
+        // wants to spend a light bay and keep the big guns can say so.
+        Optional<OrbitalBay> chosen = (bayName == null || bayName.isBlank())
+              ? support.heaviestAvailableBay()
+              : support.findBay(bayName);
+        if (chosen.isEmpty()) {
+            return null;
+        }
+
+        OrbitalBay bay = chosen.get();
+
+        // StratOps p.103: "Each orbit-to-surface attack is resolved using the Artillery rules", with the additions
+        // below. The base number is the firing vessel's own Gunnery.
+        int toHit = support.gunnery();
+        toHit += ORBITAL_IMMOBILE_HEX_MODIFIER;
+        if (isHexTagged(position)) {
+            toHit += ORBITAL_TAG_MODIFIER;
+        }
+        // "each subsequent orbit-to-surface attack against the same target hex receives a -1 to-hit modifier if
+        // there is a friendly unit with LOS to the target hex"
+        int spotted = orbitalStrikesOnHex.getOrDefault(position, 0);
+        if ((spotted > 0) && hasFriendlyLineOfSight(player, position)) {
+            toHit -= spotted;
+        }
+        orbitalStrikesOnHex.merge(position, 1, Integer::sum);
+
+        // The roll is made even when the modified number is above 12: the book is explicit that the shot "will still
+        // hit somewhere ... and damage targets over a large area even if the attack misses its intended target hex".
+        int roll = Compute.d6(2);
+        int marginOfFailure = toHit - roll;
+        Coords impact = (marginOfFailure > 0) ? Compute.scatter(position, marginOfFailure) : position;
+
+        // Flight time by weapon class: energy lands this turn, ballistic the next, capital missiles 1D6 turns out.
+        int delay = bay.weaponClass().arrivalDelay(Compute.d6());
+
+        Report attackReport = new Report(1304, Report.PUBLIC);
+        attackReport.indent();
+        attackReport.add(support.shipName());
+        attackReport.add(bay.name());
+        attackReport.add(position.getBoardNum());
+        attackReport.add(toHit);
+        attackReport.add(roll);
+        attackReport.add(marginOfFailure > 0 ? impact.getBoardNum() : "on target");
+        attackReport.add(delay);
+        getMainPhaseReport().addElement(attackReport);
+
+        addScheduledOrbitalBombardment(new OrbitalBombardment.Builder()
+              .x(impact.getX())
+              .y(impact.getY())
+              .damage(bay.damage())
+              .radius(OrbitalSupport.BLAST_RADIUS)
+              .playerId(player.getId())
+              .shipName(support.shipName())
+              .bayName(bay.name())
+              .aimPoint(position)
+              .turnsUntilImpact(delay)
+              .build());
+
+        player.setOrbitalSupport(support.bayFired(bay.name()));
+        transmitPlayerUpdate(player);
+        return bay;
     }
 
     /**
@@ -20065,17 +20226,25 @@ public class TWGameManager extends AbstractGameManager {
         if (scheduledOrbitalBombardment.isEmpty()) {
             return;
         }
+        if (scheduledOrbitalBombardment.stream().noneMatch(OrbitalBombardment::isDue)) {
+            // Everything is still in flight; count a turn off and say nothing.
+            scheduledOrbitalBombardment.forEach(OrbitalBombardment::tickTowardsImpact);
+            return;
+        }
 
         var r = new Report(1303, Report.PUBLIC);
         r.indent();
         r.newlines = 2;
         getMainPhaseReport().add(r);
 
-        scheduledOrbitalBombardment.forEach(ob -> doOrbitalBombardment(new Coords(ob.getX(), ob.getY()),
-              ob.getDamage(),
-              ob.getRadius()));
-        scheduledOrbitalBombardment.forEach(this::drawOrbitalBombardmentOnBoard);
-        scheduledOrbitalBombardment.clear();
+        // Shots in flight count down first, so one scheduled with a delay this phase is not resolved in the same
+        // phase it was fired.
+        List<OrbitalBombardment> landing = scheduledOrbitalBombardment.stream().filter(OrbitalBombardment::isDue).toList();
+
+        landing.forEach(ob -> doOrbitalBombardment(new Coords(ob.getX(), ob.getY()), ob.getDamage(), ob.getRadius()));
+        landing.forEach(this::drawOrbitalBombardmentOnBoard);
+        scheduledOrbitalBombardment.removeAll(landing);
+        scheduledOrbitalBombardment.forEach(OrbitalBombardment::tickTowardsImpact);
         getGame().resetOrbitalBombardmentAttacks();
 
         r = new Report(1301, Report.PUBLIC);

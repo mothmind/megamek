@@ -374,6 +374,11 @@ public class OptionsConstants {
     public static final String ADVANCED_LIGHTNING_STORM_TARGETS_UNITS = "lightning_storm_targets_units";
     public static final String ADVANCED_DOUBLE_BLIND = "double_blind";
     public static final String ADVANCED_SINGLE_BLIND_BOTS = "single_blind_bots";
+    /**
+     * House rule: a JumpShip or WarShip armed with naval weapons may support a surface battle from orbit, granting
+     * its owning player a limited number of bombardments without the ship itself being present on the board.
+     */
+    public static final String ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT = "orbital_bombardment_support";
     public static final String ADVANCED_TAC_OPS_SENSORS = "tacops_sensors";
     public static final String ADVANCED_SUPPRESS_ALL_DB_MESSAGES = "suppress_all_double_blind_messages";
     public static final String ADVANCED_SUPPRESS_DB_BV = "suppress_double_blind_bv";

@@ -104,6 +104,7 @@ import megamek.client.ui.dialogs.helpDialogs.MMReadMeHelpDialog;
 import megamek.client.ui.dialogs.miniReport.MiniReportDisplayDialog;
 import megamek.client.ui.dialogs.miniReport.MiniReportDisplayPanel;
 import megamek.client.ui.dialogs.minimap.MinimapDialog;
+import megamek.client.ui.dialogs.orbital.OrbitalStrikeDialog;
 import megamek.client.ui.dialogs.minimap.MinimapPanel;
 import megamek.client.ui.dialogs.phaseDisplay.NovaNetworkViewDialog;
 import megamek.client.ui.dialogs.randomArmy.RandomArmyDialog;
@@ -247,6 +248,7 @@ public class ClientGUI extends AbstractClientGUI
     public static final String VIEW_PLANETARY_CONDITIONS_OVERLAY = "viewPlanetaryConditions";
     public static final String VIEW_TRACE_OVERLAY = "viewTraceOverlay";
     public static final String VIEW_MINI_MAP = "viewMinimap";
+    public static final String VIEW_ORBITAL_STRIKE = "viewOrbitalStrike";
     public static final String VIEW_UNIT_OVERVIEW = "viewUnitOverview";
     public static final String VIEW_ZOOM_IN = "viewZoomIn";
     public static final String VIEW_ZOOM_OUT = "viewZoomOut";
@@ -753,6 +755,30 @@ public class ClientGUI extends AbstractClientGUI
 
     public MinimapDialog getMiniMapDialog() {
         return miniMaps.get(0);
+    }
+
+    /** Lazily built so a game without orbital support never creates it. */
+    private OrbitalStrikeDialog orbitalStrikeDialog;
+
+    /**
+     * Shows or hides the orbital bombardment window. Unlike the unit displays it is not tied to a selected unit: the
+     * supporting ship is in orbit and was never deployed, so it gets a window of its own like the minimap.
+     */
+    public void toggleOrbitalStrikeDialog() {
+        if (orbitalStrikeDialog == null) {
+            orbitalStrikeDialog = new OrbitalStrikeDialog(frame, this);
+        }
+        orbitalStrikeDialog.setVisible(!orbitalStrikeDialog.isVisible());
+        if (orbitalStrikeDialog.isVisible()) {
+            orbitalStrikeDialog.update();
+        }
+    }
+
+    /** Refreshes the orbital window when one exists; a no-op otherwise. */
+    private void refreshOrbitalStrikeDialog() {
+        if (orbitalStrikeDialog != null) {
+            orbitalStrikeDialog.update();
+        }
     }
 
     public BotCommandsDialog getBotCommandsDialog() {
@@ -1476,6 +1502,9 @@ public class ClientGUI extends AbstractClientGUI
                 break;
             case VIEW_MINI_MAP:
                 GUIP.toggleMinimapEnabled();
+                break;
+            case VIEW_ORBITAL_STRIKE:
+                toggleOrbitalStrikeDialog();
                 break;
             case VIEW_BOT_COMMANDS_OFF:
                 GUIP.setBotCommandsEnabled(false);
@@ -3270,6 +3299,8 @@ public class ClientGUI extends AbstractClientGUI
 
         @Override
         public void gamePlayerChange(GamePlayerChangeEvent evt) {
+            // A bay being spent reaches the client as a player update.
+            refreshOrbitalStrikeDialog();
             if (playerListDialog != null) {
                 playerListDialog.refreshPlayerList();
 
@@ -3304,6 +3335,8 @@ public class ClientGUI extends AbstractClientGUI
 
         @Override
         public void gamePhaseChange(GamePhaseChangeEvent e) {
+            // The window enables firing only during targeting, and bays change between phases.
+            refreshOrbitalStrikeDialog();
             for (IBoardView bv : boardViews()) {
                 // This is a really lame place for this, but I couldn't find a
                 // better one without making massive changes (which didn't seem

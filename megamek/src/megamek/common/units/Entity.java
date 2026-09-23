@@ -12125,6 +12125,17 @@ public abstract class Entity extends TurnOrdered
         if (isAssaultDropInProgress()) {
             return false;
         }
+
+        // A force supported from orbit needs this phase to happen even with no artillery on the field. The strike is
+        // called from the orbital bombardment window rather than from any unit - the ship firing it was never
+        // deployed - so without this the phase is skipped and the window can never be used, which is exactly the
+        // case orbital support exists for.
+        if ((getGame() != null)
+              && getGame().getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)
+              && (getOwner() != null)
+              && getOwner().getOrbitalSupport().isAvailable()) {
+            return true;
+        }
         for (WeaponMounted mounted : getWeaponList()) {
             WeaponType weaponType = mounted.getType();
             if (weaponType == null) {

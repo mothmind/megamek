@@ -173,6 +173,8 @@ public class CommonMenuBar extends JMenuBar implements ActionListener, IPreferen
 
     // The View menu
     private final JCheckBoxMenuItem viewMinimap = new JCheckBoxMenuItem(getString("CommonMenuBar.viewMinimap"));
+    private final JCheckBoxMenuItem viewOrbitalStrike =
+          new JCheckBoxMenuItem(getString("CommonMenuBar.viewOrbitalStrike"));
     private final JCheckBoxMenuItem viewMekDisplay = new JCheckBoxMenuItem(getString("CommonMenuBar.viewMekDisplay"));
     private final JCheckBoxMenuItem viewForceDisplay = new JCheckBoxMenuItem(getString("CommonMenuBar.viewForceDisplay"));
     private final JMenuItem viewNovaNetworks = new JMenuItem(getString("CommonMenuBar.viewNovaNetworks"));
@@ -380,6 +382,7 @@ public class CommonMenuBar extends JMenuBar implements ActionListener, IPreferen
         initMenuItem(viewMekDisplay, menu, VIEW_UNIT_DISPLAY, VK_D, GUIP.getUnitDisplayEnabled());
         GUIP.setMinimapEnabled(false);
         initMenuItem(viewMinimap, menu, VIEW_MINI_MAP, VK_M, GUIP.getMinimapEnabled());
+        initMenuItem(viewOrbitalStrike, menu, VIEW_ORBITAL_STRIKE, false);
         GUIP.setMiniReportEnabled(false);
         initMenuItem(gameRoundReport, menu, VIEW_ROUND_REPORT, GUIP.getMiniReportEnabled());
         GUIP.setPlayerListEnabled(false);
@@ -645,6 +648,7 @@ public class CommonMenuBar extends JMenuBar implements ActionListener, IPreferen
         gamePlayerSettings.setEnabled(isInGame);
 
         viewMinimap.setEnabled(isBoardView);
+        viewOrbitalStrike.setEnabled(isBoardView);
         viewZoomIn.setEnabled(isBoardView);
         viewZoomOut.setEnabled(isBoardView);
         viewZoomReset.setEnabled(isBoardView);

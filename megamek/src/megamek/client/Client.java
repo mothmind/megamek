@@ -479,6 +479,18 @@ public class Client extends AbstractClient {
     /**
      * Sends an "deploy minefields" packet
      */
+    /**
+     * Asks the server to fire one of this player's orbital bays at a hex. The server owns every check - that the rule
+     * is on, that the bay exists and is loaded, and that the hex is on the board - so a client cannot talk itself
+     * into a strike it has not got.
+     *
+     * @param coords  The hex to aim at
+     * @param bayName The bay to fire, or blank for the heaviest still loaded
+     */
+    public void sendOrbitalStrike(Coords coords, String bayName) {
+        send(new Packet(PacketCommand.ORBITAL_STRIKE, coords, bayName));
+    }
+
     public void sendDeployMinefields(Vector<Minefield> minefields) {
         send(new Packet(PacketCommand.DEPLOY_MINEFIELDS, minefields));
     }

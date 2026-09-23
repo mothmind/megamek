@@ -35,6 +35,7 @@ package megamek.server.props;
 
 import java.util.List;
 
+import megamek.common.Player;
 import megamek.common.board.Coords;
 
 /**
@@ -50,6 +51,13 @@ public class OrbitalBombardment {
     private final int damage;
     private final int radius;
     private final Coords coords;
+    private final int playerId;
+    private final String shipName;
+    private final String bayName;
+    /** Where the shot was aimed, which is not where it lands when the attack roll missed. */
+    private final Coords aimPoint;
+    /** Ground turns still to pass before this lands. Counted down once per firing phase. */
+    private int turnsUntilImpact;
 
     /**
      * Represents an orbital bombardment event. x and y are board positions, damageFactor is the damage at impact point
@@ -61,6 +69,11 @@ public class OrbitalBombardment {
         this.damage = builder.damage;
         this.radius = builder.radius;
         this.coords = new Coords(x, y);
+        this.playerId = builder.playerId;
+        this.shipName = builder.shipName;
+        this.bayName = builder.bayName;
+        this.aimPoint = (builder.aimPoint == null) ? this.coords : builder.aimPoint;
+        this.turnsUntilImpact = Math.max(0, builder.turnsUntilImpact);
     }
 
     public Coords getCoords() {
@@ -81,6 +94,59 @@ public class OrbitalBombardment {
 
     public int getRadius() {
         return radius;
+    }
+
+    /**
+     * @return The id of the player who called this bombardment, or {@link Player#PLAYER_NONE} when it was called by
+     *       a game master rather than by a ship supporting one side.
+     */
+    public int getPlayerId() {
+        return playerId;
+    }
+
+    /**
+     * @return The name of the vessel firing, for reports. Empty when no particular ship is credited.
+     */
+    public String getShipName() {
+        return shipName;
+    }
+
+    /**
+     * @return The naval bay that fired, for reports. Empty when no particular bay is credited, as with a game
+     *       master's strike.
+     */
+    public String getBayName() {
+        return bayName;
+    }
+
+    /**
+     * @return The hex the shot was aimed at. Differs from {@link #getCoords()} when the attack roll missed and the
+     *       shot scattered.
+     */
+    public Coords getAimPoint() {
+        return aimPoint;
+    }
+
+    /** @return True when the shot drifted off its aim point. */
+    public boolean hasScattered() {
+        return !aimPoint.equals(coords);
+    }
+
+    /** @return Ground turns still to pass before this lands. */
+    public int getTurnsUntilImpact() {
+        return turnsUntilImpact;
+    }
+
+    /** @return True when this shot arrives now. */
+    public boolean isDue() {
+        return turnsUntilImpact <= 0;
+    }
+
+    /** Counts one ground turn off the flight time. */
+    public void tickTowardsImpact() {
+        if (turnsUntilImpact > 0) {
+            turnsUntilImpact--;
+        }
     }
 
     public int getXOffset() {
@@ -112,6 +178,11 @@ public class OrbitalBombardment {
         private int y;
         private int damage = 10;
         private int radius = 4;
+        private int playerId = Player.PLAYER_NONE;
+        private String shipName = "";
+        private String bayName = "";
+        private Coords aimPoint = null;
+        private int turnsUntilImpact = 0;
 
         public Builder x(int x) {
             this.x = x;
@@ -130,6 +201,36 @@ public class OrbitalBombardment {
 
         public Builder radius(int radius) {
             this.radius = radius;
+            return this;
+        }
+
+        /** Credits the bombardment to a player, so reports can name who called it. */
+        public Builder playerId(int playerId) {
+            this.playerId = playerId;
+            return this;
+        }
+
+        /** Credits the bombardment to a named vessel, so reports can name what fired. */
+        public Builder shipName(String shipName) {
+            this.shipName = (shipName == null) ? "" : shipName;
+            return this;
+        }
+
+        /** Credits the bombardment to a particular naval bay, so reports can name which guns fired. */
+        public Builder bayName(String bayName) {
+            this.bayName = (bayName == null) ? "" : bayName;
+            return this;
+        }
+
+        /** Records where the shot was aimed, so a scattered hit can be reported as one. */
+        public Builder aimPoint(Coords aimPoint) {
+            this.aimPoint = aimPoint;
+            return this;
+        }
+
+        /** Sets the flight time in ground turns; 0 lands at the end of the phase it was fired in. */
+        public Builder turnsUntilImpact(int turnsUntilImpact) {
+            this.turnsUntilImpact = turnsUntilImpact;
             return this;
         }
 

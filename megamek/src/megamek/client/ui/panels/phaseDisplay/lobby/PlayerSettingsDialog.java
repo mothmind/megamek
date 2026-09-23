@@ -82,6 +82,8 @@ import megamek.client.ui.util.UIUtil.TipButton;
 import megamek.client.ui.util.UIUtil.TipLabel;
 import megamek.client.ui.util.UIUtil.TipTextField;
 import megamek.common.OffBoardDirection;
+import megamek.common.OrbitalBay;
+import megamek.common.OrbitalSupport;
 import megamek.common.Player;
 import megamek.common.Team;
 import megamek.common.annotations.Nullable;
@@ -321,6 +323,19 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
     private final JLabel labTripwires = new JLabel(getString("PlayerSettingsDialog.labTripwire"), SwingConstants.RIGHT);
     private final JLabel labPitfalls = new JLabel(getString("PlayerSettingsDialog.labPitfall"), SwingConstants.RIGHT);
     private final JTextField fldConventional = new JTextField(3);
+
+    private final JLabel labOrbitalShip = new JLabel(getString("PlayerSettingsDialog.labOrbitalShip"),
+          SwingConstants.RIGHT);
+    private final JTextField fldOrbitalShip = new JTextField(10);
+    private final JLabel labOrbitalBays = new JLabel(getString("PlayerSettingsDialog.labOrbitalBays"),
+          SwingConstants.RIGHT);
+    private final JTextField fldOrbitalBays = new JTextField(3);
+    private final JLabel labOrbitalAV = new JLabel(getString("PlayerSettingsDialog.labOrbitalAV"),
+          SwingConstants.RIGHT);
+    private final JTextField fldOrbitalAV = new JTextField(3);
+    private final JLabel labOrbitalGunnery = new JLabel(getString("PlayerSettingsDialog.labOrbitalGunnery"),
+          SwingConstants.RIGHT);
+    private final JTextField fldOrbitalGunnery = new JTextField(3);
     private final JTextField fldVibrabomb = new JTextField(3);
     private final JTextField fldActive = new JTextField(3);
     private final JTextField fldInferno = new JTextField(3);
@@ -403,6 +418,9 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
                                                     .getOptions()
                                                     .booleanOption(OptionsConstants.ADVANCED_MINEFIELDS))) {
             mainPanel.add(mineSection());
+        }
+        if (client.getGame().getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)) {
+            mainPanel.add(orbitalSection());
         }
         mainPanel.add(fortificationSection());
         mainPanel.add(groundObjectConfigSection());
@@ -679,6 +697,7 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
     private void apply() {
 
         player.setConstantInitBonus(getInit());
+        applyOrbitalSupport(player);
         player.setMinefieldCount(Minefield.TYPE_CONVENTIONAL, getCnvMines());
         player.setMinefieldCount(Minefield.TYPE_VIBRABOMB, getVibMines());
         player.setMinefieldCount(Minefield.TYPE_ACTIVE, getActMines());
@@ -741,6 +760,71 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
         panContent.add(fldInit);
         labInit.setToolTipText(Messages.getString("PlayerSettingsDialog.initModTT"));
         fldInit.setToolTipText(Messages.getString("PlayerSettingsDialog.initModTT"));
+        return result;
+    }
+
+    /**
+     * Configures the ship supporting this player from orbit, for games played without MekHQ.
+     *
+     * <p>MekHQ reads these from the vessel in the force's hangar. Standalone there is no hangar to read, so the
+     * player states what is overhead the same way they state how many minefields they brought: a ship name, a number
+     * of naval bays, and the Attack Value of each. Damage at the target hex is that Attack Value in standard scale,
+     * ten points per capital point, and the blast always covers four hexes.</p>
+     */
+    /**
+     * Builds the player's orbital support from the entered bay count and Attack Value, leaving it untouched when the
+     * rule is off so a stale package cannot survive the option being switched back on later.
+     */
+    private void applyOrbitalSupport(Player player) {
+        if (!client.getGame().getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)) {
+            return;
+        }
+
+        int bayCount = parseField(fldOrbitalBays);
+        int attackValue = parseField(fldOrbitalAV);
+        if ((bayCount <= 0) || (attackValue <= 0)) {
+            player.setOrbitalSupport(OrbitalSupport.NONE);
+            return;
+        }
+
+        String shipName = fldOrbitalShip.getText().isBlank()
+              ? Messages.getString("PlayerSettingsDialog.orbitalDefaultShip")
+              : fldOrbitalShip.getText().trim();
+
+        List<OrbitalBay> bays = new ArrayList<>();
+        for (int i = 1; i <= bayCount; i++) {
+            // Numbered so a player can name one at the /orbitalstrike prompt and tell them apart in reports.
+            bays.add(new OrbitalBay(Messages.getString("PlayerSettingsDialog.orbitalBayName", i), attackValue));
+        }
+
+        // A blank or nonsense skill falls back to Regular rather than handing out a free bullseye.
+        int gunnery = parseField(fldOrbitalGunnery);
+        if (gunnery <= 0) {
+            gunnery = OrbitalSupport.DEFAULT_GUNNERY;
+        }
+        player.setOrbitalSupport(new OrbitalSupport(shipName, bays, gunnery));
+    }
+
+    private JPanel orbitalSection() {
+        JPanel result = new OptionPanel("PlayerSettingsDialog.header.orbital");
+        Content panContent = new Content(new GridLayout(4, 2, 10, 5));
+        result.add(panContent);
+
+        String tooltip = Messages.getString("PlayerSettingsDialog.orbitalTT");
+        for (JComponent component : new JComponent[] { labOrbitalShip, fldOrbitalShip, labOrbitalBays, fldOrbitalBays,
+                                                       labOrbitalAV, fldOrbitalAV, labOrbitalGunnery,
+                                                       fldOrbitalGunnery }) {
+            component.setToolTipText(tooltip);
+        }
+
+        panContent.add(labOrbitalShip);
+        panContent.add(fldOrbitalShip);
+        panContent.add(labOrbitalBays);
+        panContent.add(fldOrbitalBays);
+        panContent.add(labOrbitalAV);
+        panContent.add(fldOrbitalAV);
+        panContent.add(labOrbitalGunnery);
+        panContent.add(fldOrbitalGunnery);
         return result;
     }
 

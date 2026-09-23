@@ -233,6 +233,8 @@ public class Princess extends BotClient {
     private boolean surrenderOffered = false;
     private int surrenderOfferedRound = 0;
     private static final int SURRENDER_REMINDER_INTERVAL = 3;
+    private OrbitalStrikeControl orbitalStrikeControl = new OrbitalStrikeControl();
+    private int lastOrbitalStrikeRound = 0;
     private final Set<Integer> attackedWhileFleeing = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Integer> crippledUnits = new HashSet<>();
     private final ArtilleryCommandAndControl artilleryCommandAndControl = new ArtilleryCommandAndControl();
@@ -3146,6 +3148,52 @@ public class Princess extends BotClient {
         }
     }
 
+    void setOrbitalStrikeControl(final OrbitalStrikeControl orbitalStrikeControl) {
+        this.orbitalStrikeControl = orbitalStrikeControl;
+    }
+
+    /**
+     * Once per round, decides whether to call down the bombardment offered by a JumpShip or WarShip supporting this
+     * force from orbit. The request is the plain {@code /orbitalstrike} chat command, which the server answers by
+     * scheduling the strike and spending one of the ship's shots; it lands at the end of this firing phase.
+     *
+     * <p>Driven from the firing phase rather than from movement so the aim point is chosen against final positions.
+     * A ship with nothing worth hitting holds its fire, so unused strikes stay available for a later round.</p>
+     *
+     * @param round The round this check belongs to. A round is only ever evaluated once, so a strike cannot be
+     *              called twice in the same round.
+     */
+    void checkForOrbitalStrike(final int round) {
+        if (round <= lastOrbitalStrikeRound) {
+            return;
+        }
+        lastOrbitalStrikeRound = round;
+
+        try {
+            if (!getGame().getOptions().booleanOption(OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT)) {
+                return;
+            }
+
+            final OrbitalSupport support = getLocalPlayer().getOrbitalSupport();
+            if (!support.isAvailable()) {
+                return;
+            }
+
+            final String bayName = support.heaviestAvailableBay().map(OrbitalBay::name).orElse("");
+            orbitalStrikeControl.selectTarget(this, support).ifPresent(target -> {
+                sendChat(Messages.getString("Princess.orbitalStrike.calling",
+                      support.shipName(),
+                      bayName,
+                      target.getBoardNum()));
+                // Hexes are 1-based in chat commands and 0-based internally. The bay is named explicitly so the
+                // server fires the one the targeting scored against, not whichever it would pick by default.
+                sendChat("/orbitalstrike " + (target.getX() + 1) + " " + (target.getY() + 1) + " " + bayName);
+            });
+        } catch (final Exception e) {
+            LOGGER.error(e, "Orbital strike check failed");
+        }
+    }
+
     /**
      * Logic to determine if this entity is "falling back" for any reason
      *
@@ -3520,6 +3568,7 @@ public class Princess extends BotClient {
     protected void initFiring() {
         try {
             initialize();
+            checkForOrbitalStrike(getGame().getRoundCount());
 
             // ----Debugging: print out any errors made in guessing to hit
             // values-----

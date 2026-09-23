@@ -144,6 +144,9 @@ public final class Player extends TurnOrdered {
     private transient boolean artilleryRevealAll = false;
 
     private HexArea fleeArea = new BorderHexArea(true, true, true, true);
+
+    /** Orbital fire support from a ship assisting this player from orbit; NONE when no ship is helping. */
+    private OrbitalSupport orbitalSupport = OrbitalSupport.NONE;
     //endregion Variable Declarations
 
     //region Constructors
@@ -1146,6 +1149,8 @@ public final class Player extends TurnOrdered {
 
         copy.admitsDefeat = admitsDefeat;
 
+        copy.orbitalSupport = orbitalSupport;
+
         copy.setInitiative(new InitiativeRoll(getInitiative()));
 
         return copy;
@@ -1168,5 +1173,24 @@ public final class Player extends TurnOrdered {
      */
     public void setFleeZone(HexArea fleeArea) {
         this.fleeArea = fleeArea;
+    }
+
+    /**
+     * @return The orbital fire support available to this player. Never null; {@link OrbitalSupport#NONE} means no
+     *       ship in orbit is assisting this player.
+     */
+    public OrbitalSupport getOrbitalSupport() {
+        return orbitalSupport;
+    }
+
+    /**
+     * Sets the orbital fire support available to this player, normally derived from a JumpShip or WarShip in the
+     * owning force that is armed with naval weapons.
+     *
+     * @param orbitalSupport The support to grant, or {@link OrbitalSupport#NONE} to revoke it. Null is treated as
+     *                       NONE.
+     */
+    public void setOrbitalSupport(OrbitalSupport orbitalSupport) {
+        this.orbitalSupport = (orbitalSupport == null) ? OrbitalSupport.NONE : orbitalSupport;
     }
 }

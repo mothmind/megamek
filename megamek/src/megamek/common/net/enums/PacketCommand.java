@@ -160,6 +160,8 @@ public enum PacketCommand {
     SENDING_MAP_SETTINGS,
     END_OF_GAME,
     DEPLOY_MINEFIELDS,
+    /** A player calls an orbital bombardment from the ship supporting them, naming a hex and a naval bay. */
+    ORBITAL_STRIKE,
 
     REVEAL_MINEFIELD,
     REMOVE_MINEFIELD,
