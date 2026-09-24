@@ -93,6 +93,7 @@ public class PilotOptions extends AbstractOptions {
         addOption(adv, OptionsConstants.GUNNERY_RANGE_MASTER, new Vector<>());
         addOption(adv, OptionsConstants.GUNNERY_SANDBLASTER, new Vector<>());
         addOption(adv, OptionsConstants.GUNNERY_SNIPER, false);
+        addOption(adv, OptionsConstants.GUNNERY_TRIGGER_DISCIPLINE, false);
         addOption(adv, OptionsConstants.GUNNERY_WEAPON_SPECIALIST, new Vector<>());
 
         // Misc Abilities

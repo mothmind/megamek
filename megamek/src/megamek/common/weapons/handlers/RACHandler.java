@@ -80,10 +80,17 @@ public class RACHandler extends UltraWeaponHandler {
         boolean jams = false;
         int jamThreshold = racJamThreshold(howManyShots);
         if ((jamThreshold > 0) && (roll.getIntValue() <= jamThreshold)) {
-            // Edge may reroll the jam check; if Edge wasn't used the jam stands, otherwise the reroll decides
-            // (the weapon still jams if the reroll is at or below the same jam threshold).
-            int edgeReroll = rerollJamCheckWithEdge(attackingEntity, subjectId, vPhaseReport);
-            jams = acStillJams(edgeReroll, jamThreshold);
+            // Trigger Discipline gets first refusal, before any Edge is spent. Easing off a Rotary drops it into a
+            // lower fire mode, which is often below the jam threshold for that mode as well.
+            if (triggerDisciplineAvertsJam(attackingEntity, howManyShots, subjectId, vPhaseReport)) {
+                howManyShots--;
+                refundEasedShot();
+            } else {
+                // Edge may reroll the jam check; if Edge wasn't used the jam stands, otherwise the reroll decides
+                // (the weapon still jams if the reroll is at or below the same jam threshold).
+                int edgeReroll = rerollJamCheckWithEdge(attackingEntity, subjectId, vPhaseReport);
+                jams = acStillJams(edgeReroll, jamThreshold);
+            }
         }
 
         // Will potentially explode when rolling a 2. Can still jam if not blowing up.

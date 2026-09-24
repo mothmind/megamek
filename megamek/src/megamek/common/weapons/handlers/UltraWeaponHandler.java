@@ -166,10 +166,16 @@ public class UltraWeaponHandler extends AmmoWeaponHandler {
               && (howManyShots == 2)
               && !weaponEntity.isConventionalInfantry()
               && Game.rulesManager.getRulesWeapons().canUACsJam()) {
-            // Ultra ACs jam on a 2. Edge may reroll the jam check; if Edge wasn't used the jam stands, otherwise
-            // the reroll decides (an Ultra AC still jams only on another 2).
-            int edgeReroll = rerollJamCheckWithEdge(attackingEntity, subjectId, vPhaseReport);
-            if (acStillJams(edgeReroll, 2)) {
+            // Ultra ACs jam on a 2. Trigger Discipline gets first refusal, so a pilot with both it and Edge does not
+            // spend Edge on a jam their own skill could have averted. Edge may then reroll the jam check; if Edge
+            // wasn't used the jam stands, otherwise the reroll decides (an Ultra AC still jams only on another 2).
+            boolean eased = triggerDisciplineAvertsJam(attackingEntity, howManyShots, subjectId, vPhaseReport);
+            if (eased) {
+                howManyShots--;
+                refundEasedShot();
+            }
+            int edgeReroll = eased ? -1 : rerollJamCheckWithEdge(attackingEntity, subjectId, vPhaseReport);
+            if (!eased && acStillJams(edgeReroll, 2)) {
                 Report r = new Report();
                 r.subject = subjectId;
                 weapon.setJammed(true);
@@ -206,6 +212,84 @@ public class UltraWeaponHandler extends AmmoWeaponHandler {
         }
 
         return false;
+    }
+
+    /**
+     * Divisor turning the volley size into the Trigger Discipline penalty: a two-shot volley is Gunnery +1, four
+     * shots +2, six shots +3. The more rounds already on their way, the less chance the gunner has of catching the
+     * feed before it binds.
+     */
+    static final int TRIGGER_DISCIPLINE_VOLLEY_DIVISOR = 2;
+
+    /**
+     * The target number for a Trigger Discipline check.
+     *
+     * @param gunnery    the gunner's Gunnery skill
+     * @param shotsFired the number of shots in the volley
+     *
+     * @return the 2d6 target number
+     */
+    // package-private static for testing
+    static int triggerDisciplineTarget(int gunnery, int shotsFired) {
+        return gunnery + (shotsFired / TRIGGER_DISCIPLINE_VOLLEY_DIVISOR);
+    }
+
+    /**
+     * Trigger Discipline: the gunner feels the feed going wrong in the instant before it binds and lays off the
+     * trigger. On a jam the pilot may make a Gunnery roll to drop the volley by one shot and keep the weapon working.
+     * The shot is never fired, so the caller refunds its round and its heat.
+     *
+     * <p>Attempted before Edge, so a pilot with both does not burn a limited Edge point on a jam their own skill
+     * could have averted. A single-shot volley is not checked at all: neither an Ultra nor a Rotary can jam on one
+     * shot, so the situation cannot arise.</p>
+     *
+     * @param attacker     the firing unit
+     * @param shotsFired   the number of shots in this volley
+     * @param subjectId    the report subject id
+     * @param reportVector the report vector to append the check to
+     *
+     * @return true if the jam was averted, in which case the caller eases the volley and refunds the shot
+     */
+    // package-private static for testing
+    static boolean triggerDisciplineAvertsJam(Entity attacker, int shotsFired, int subjectId,
+          Vector<Report> reportVector) {
+        if ((attacker == null)
+              || !attacker.hasAbility(OptionsConstants.GUNNERY_TRIGGER_DISCIPLINE)
+              || (shotsFired < 2)
+              || (attacker.getCrew() == null)) {
+            return false;
+        }
+        int target = triggerDisciplineTarget(attacker.getCrew().getGunnery(), shotsFired);
+        Roll check = Compute.rollD6(2);
+        boolean averted = check.getIntValue() >= target;
+
+        Report report = new Report(averted ? 3171 : 3174);
+        report.subject = subjectId;
+        report.add(check);
+        report.add(target);
+        if (averted) {
+            report.add(shotsFired - 1);
+        }
+        reportVector.addElement(report);
+        return averted;
+    }
+
+    /**
+     * Gives back the round and the heat for a shot Trigger Discipline stopped before it was fired. Both are already
+     * spent by the time the jam check runs - ammo in {@link #useAmmo()} and heat in
+     * {@link WeaponHandler#addHeat()} - so easing off has to hand them back.
+     *
+     * <p>Only the per-shot portion of the heat is refunded. Quirk and capacitor adjustments are flat additions to
+     * the whole volley rather than per shot, so they are left alone.</p>
+     */
+    protected void refundEasedShot() {
+        if (ammo != null) {
+            ammo.setShotsLeft(ammo.getBaseShotsLeft() + 1);
+        }
+        int perShotHeat = weapon.getType().getHeat(weapon) * weapon.getNWeapons();
+        if ((perShotHeat > 0) && (weaponEntity != null)) {
+            weaponEntity.changeHeatBuildup(-perShotHeat, weapon.getName());
+        }
     }
 
     /**
