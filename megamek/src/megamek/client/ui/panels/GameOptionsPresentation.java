@@ -302,8 +302,12 @@ final class GameOptionsPresentation {
               OptionsConstants.ADVANCED_MAX_TECH_MOVEMENT_MODS,
               OptionsConstants.ADVANCED_ALTERNATE_MASC,
               OptionsConstants.ADVANCED_ALTERNATE_MASC_ENHANCED,
-              OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT,
               OptionsConstants.ADVANCED_DEAD_RECKONING_WEAPONS);
+        // SkyEye: its own section rather than a line in Unit Systems. Orbit-to-surface fire is not a system aboard
+        // a unit on the board - the ship is never deployed - and it is the one rule here that hands a player a
+        // weapon the battlefield cannot answer, so it is worth finding on its own.
+        register(ADVANCED_RULES, RULES_SPECIAL_SYSTEMS, "rules.specialSystems.orbitalSupport",
+              OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT);
         register(ADVANCED_RULES, MOVEMENT_INFANTRY, "movement.infantry.positions",
               OptionsConstants.ADVANCED_TAC_OPS_DIG_IN,
               OptionsConstants.ADVANCED_TAC_OPS_TAKE_COVER);

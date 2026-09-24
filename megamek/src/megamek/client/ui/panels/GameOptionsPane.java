@@ -114,7 +114,6 @@ public class GameOptionsPane extends JPanel {
           OptionsConstants.ADVANCED_COMBAT_FULL_ROTOR_HITS,
           OptionsConstants.ADVANCED_SINGLE_BLIND_BOTS,
           OptionsConstants.UNOFFICIAL_BRIDGE_REPAIR_ENGINEERS,
-          OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT,
           OptionsConstants.ADVANCED_INCLUSIVE_SENSOR_RANGE,
           OptionsConstants.ADVANCED_SENSORS_DETECT_ALL,
           OptionsConstants.ADVANCED_MAG_SCAN_NO_HILLS,
