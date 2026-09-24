@@ -89,6 +89,33 @@ public class DfaAttackAction extends DisplacementAttackAction {
     }
 
     /**
+     * Whether the attacker rides out a Death From Above rather than being thrown by it. A Drop Kick Guru takes half
+     * the usual self-damage, needs no piloting check to land after a hit, and is given a check rather than an
+     * automatic fall after a miss.
+     *
+     * @param attacker the attacking unit, which may be {@code null}
+     *
+     * @return whether the Drop Kick Guru ability applies
+     */
+    public static boolean isDropKickGuru(@Nullable Entity attacker) {
+        return (attacker != null) && attacker.hasAbility(OptionsConstants.PILOT_DROP_KICK_GURU);
+    }
+
+    /**
+     * The self-damage a Death From Above costs its attacker once the Drop Kick Guru ability is taken into account.
+     * Applied on top of the glancing-blow and Reinforced Legs reductions, which the caller has already made, so a
+     * pilot with both the quirk and the ability takes a quarter.
+     *
+     * @param attacker     the attacking unit
+     * @param damageTaken  the self-damage before this ability
+     *
+     * @return the self-damage to apply
+     */
+    public static int reduceSelfDamageForGuru(@Nullable Entity attacker, int damageTaken) {
+        return isDropKickGuru(attacker) ? (int) Math.floor(damageTaken / 2.0) : damageTaken;
+    }
+
+    /**
      * Damage that a mek does with a successful DFA.
      */
     public static int getDamageFor(Entity entity, boolean targetInfantry) {

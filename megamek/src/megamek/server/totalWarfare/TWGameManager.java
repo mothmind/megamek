@@ -16862,7 +16862,23 @@ public class TWGameManager extends AbstractGameManager {
                 addReport(r);
                 // entity isn't DFA-ing anymore
                 ae.setDisplacementAttack(null);
-                addReport(doEntityFall(ae, dest, 2, 3, ae.getBasePilotingRoll(), false, false), 1);
+                if (DfaAttackAction.isDropKickGuru(ae)) {
+                    // Drop Kick Guru: a botched drop is a piloting check rather than a guaranteed sprawl. The
+                    // displacement queues the roll and drops the pilot only if it fails.
+                    Report guruReport = new Report(4266);
+                    guruReport.subject = ae.getId();
+                    guruReport.addDesc(ae);
+                    guruReport.indent();
+                    addReport(guruReport);
+                    addReport(doEntityDisplacement(ae,
+                          ae.getPosition(),
+                          dest,
+                          new PilotingRollData(ae.getId(),
+                                Game.rulesManager.getRulesPSR().getSuccessfulDFAModifier(),
+                                "missed death from above")));
+                } else {
+                    addReport(doEntityFall(ae, dest, 2, 3, ae.getBasePilotingRoll(), false, false), 1);
+                }
                 Entity violation = Compute.stackingViolation(game, ae, dest, null, ae.climbMode(), false);
                 if (violation != null) {
                     // target gets displaced
@@ -16995,6 +17011,9 @@ public class TWGameManager extends AbstractGameManager {
             damageTaken = (int) Math.floor(damageTaken / 2.0);
         }
 
+        // Drop Kick Guru: a specialist rides the impact out and takes half of what it would otherwise cost.
+        damageTaken = DfaAttackAction.reduceSelfDamageForGuru(ae, damageTaken);
+
         // damage attacker
         r = new Report(4240);
         r.subject = ae.getId();
@@ -17030,12 +17049,15 @@ public class TWGameManager extends AbstractGameManager {
             return;
         }
         ae.setElevation(ae.calcElevation(aeHex, teHex, 0, false));
-        // HACK: to avoid automatic falls, displace from dest to dest
+        // HACK: to avoid automatic falls, displace from dest to dest. A null roll means no landing check, which is
+        // what Drop Kick Guru buys: the specialist simply lands on their feet.
         addReport(doEntityDisplacement(ae,
               dest,
               dest,
-              new PilotingRollData(ae.getId(), Game.rulesManager.getRulesPSR().getSuccessfulDFAModifier(),
-                    "executed death from above")));
+              DfaAttackAction.isDropKickGuru(ae)
+                    ? null
+                    : new PilotingRollData(ae.getId(), Game.rulesManager.getRulesPSR().getSuccessfulDFAModifier(),
+                          "executed death from above")));
 
         // entity isn't DFA-ing anymore
         ae.setDisplacementAttack(null);
