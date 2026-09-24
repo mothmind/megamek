@@ -113,7 +113,7 @@ public class WeaponMounted extends Mounted<WeaponType> {
 
     @Override
     public int getCurrentHeat() {
-        int heat = getType().getHeat();
+        int heat = getType().getHeat(this);
 
         // AR10's have heat based upon the loaded missile
         if (getType().getName().equals("AR10")) {

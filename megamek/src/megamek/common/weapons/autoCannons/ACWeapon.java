@@ -52,6 +52,7 @@ import megamek.common.options.OptionsConstants;
 import megamek.common.rolls.TargetRoll;
 import megamek.common.units.Entity;
 import megamek.common.weapons.AmmoWeapon;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.weapons.Weapon;
 import megamek.common.weapons.handlers.AttackHandler;
 import megamek.common.weapons.handlers.RapidFireACWeaponHandler;
@@ -185,5 +186,17 @@ public abstract class ACWeapon extends AmmoWeapon {
             removeMode("");
             removeMode(Weapon.MODE_AC_RAPID);
         }
+    }
+    @Override
+    public int getToHitModifierAtRange(@Nullable Mounted<?> mounted, int range) {
+        if ((rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) && DeadReckoningWeapons.isEnabled(mounted)) {
+            return DeadReckoningWeapons.ac2ToHitModifierAtRange(range);
+        }
+        return super.getToHitModifierAtRange(mounted, range);
+    }
+
+    @Override
+    public boolean hasHitModifiersByRange() {
+        return (rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) || super.hasHitModifiersByRange();
     }
 }

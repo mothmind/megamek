@@ -1622,8 +1622,10 @@ public class ComputeToHit {
                 modifier = weaponType.getToHitModifierAtRange(weapon, RangeType.RANGE_SHORT);
             } else if (nRange <= nRanges[RangeType.RANGE_MEDIUM]) {
                 modifier = weaponType.getToHitModifierAtRange(weapon, RangeType.RANGE_MEDIUM);
-            } else {
+            } else if (nRange <= nRanges[RangeType.RANGE_LONG]) {
                 modifier = weaponType.getToHitModifierAtRange(weapon, RangeType.RANGE_LONG);
+            } else {
+                modifier = weaponType.getToHitModifierAtRange(weapon, RangeType.RANGE_EXTREME);
             }
         }
         if (modifier != 0) {

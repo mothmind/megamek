@@ -58,6 +58,7 @@ import megamek.common.weapons.handlers.AttackHandler;
 import megamek.common.weapons.handlers.ThunderBoltWeaponHandler;
 import megamek.common.weapons.handlers.ThunderboltScatterableHandler;
 import megamek.common.weapons.handlers.lrm.LRMScatterableHandler;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.weapons.missiles.MissileWeapon;
 import megamek.server.totalWarfare.TWGameManager;
 
@@ -129,5 +130,16 @@ public abstract class ThunderboltWeapon extends MissileWeapon {
             removeMode("");
             removeMode("Indirect");
         }
+    }
+    /**
+     * Thunderbolts trade a hex of minimum range for a hex of reach in every band under the Dead Reckoning rebalance.
+     * Overriding the two-argument form catches both range paths, since the one-argument form delegates to it.
+     */
+    @Override
+    public int[] getRanges(Mounted<?> weapon, Mounted<?> ammo) {
+        if (DeadReckoningWeapons.isEnabled(weapon)) {
+            return DeadReckoningWeapons.thunderboltRanges();
+        }
+        return super.getRanges(weapon, ammo);
     }
 }

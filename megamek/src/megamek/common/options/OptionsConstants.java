@@ -379,6 +379,8 @@ public class OptionsConstants {
      * its owning player a limited number of bombardments without the ship itself being present on the board.
      */
     public static final String ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT = "orbital_bombardment_support";
+
+    public static final String ADVANCED_DEAD_RECKONING_WEAPONS = "dr_weapon_rebalance";
     public static final String ADVANCED_TAC_OPS_SENSORS = "tacops_sensors";
     public static final String ADVANCED_SUPPRESS_ALL_DB_MESSAGES = "suppress_all_double_blind_messages";
     public static final String ADVANCED_SUPPRESS_DB_BV = "suppress_double_blind_bv";

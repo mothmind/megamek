@@ -38,6 +38,9 @@ import java.io.Serial;
 
 import megamek.common.SourceBookCode;
 import megamek.common.SimpleTechLevel;
+import megamek.common.annotations.Nullable;
+import megamek.common.equipment.Mounted;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.enums.AvailabilityValue;
 import megamek.common.enums.Faction;
 import megamek.common.enums.TechBase;
@@ -88,5 +91,10 @@ public class ISBinaryLaserCannon extends LaserWeapon {
               .setISAdvancement(2812, DATE_NONE, 3077)
               .setPrototypeFactions(Faction.FW)
               .setProductionFactions(Faction.WB).setStaticTechLevel(SimpleTechLevel.STANDARD);
+    }
+
+    @Override
+    public int getHeat(@Nullable Mounted<?> mounted) {
+        return DeadReckoningWeapons.isEnabled(mounted) ? DeadReckoningWeapons.BLAZER_HEAT : super.getHeat(mounted);
     }
 }

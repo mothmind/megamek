@@ -42,12 +42,14 @@ import java.util.Map;
 
 import megamek.common.RangeType;
 import megamek.common.alphaStrike.AlphaStrikeElement;
+import megamek.common.annotations.Nullable;
 import megamek.common.compute.Compute;
 import megamek.common.equipment.AmmoType.AmmoTypeEnum;
 import megamek.common.game.Game;
 import megamek.common.rolls.TargetRoll;
 import megamek.common.units.Entity;
 import megamek.common.weapons.AlamoMissileWeapon;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.weapons.artillery.*;
 import megamek.common.weapons.attacks.AltitudeBombAttack;
 import megamek.common.weapons.attacks.DiveBombAttack;
@@ -879,6 +881,18 @@ public class WeaponType extends EquipmentType {
     }
 
     /**
+     * The heat this weapon generates on the given mount. Weapons whose heat depends on what is loaded or on a game
+     * option override this; everything else reports its flat heat.
+     *
+     * @param mounted the mount being fired, which may be {@code null} outside a game
+     *
+     * @return the heat to apply
+     */
+    public int getHeat(@Nullable Mounted<?> mounted) {
+        return getHeat();
+    }
+
+    /**
      * Returns the adjustement of heat used for BV calculation
      */
     public int getHeatAdjustmentForBvCalculation() { return  heatAdjustmentForBvCalculation; }
@@ -985,11 +999,20 @@ public class WeaponType extends EquipmentType {
         if ((getAmmoType() == AmmoTypeEnum.MML) && hasLoadedAmmo) {
             AmmoType ammoType = (AmmoType) ammo.getType();
             if (ammoType.hasFlag(AmmoType.F_MML_LRM) || (getAmmoType() == AmmoTypeEnum.LRM_TORPEDO)) {
-                minRange = 6;
-                sRange = 7;
-                mRange = 14;
-                lRange = 21;
-                eRange = 28;
+                if (DeadReckoningWeapons.isEnabled(weapon)) {
+                    int[] rebalanced = DeadReckoningWeapons.mmlLrmRanges();
+                    minRange = rebalanced[RangeType.RANGE_MINIMUM];
+                    sRange = rebalanced[RangeType.RANGE_SHORT];
+                    mRange = rebalanced[RangeType.RANGE_MEDIUM];
+                    lRange = rebalanced[RangeType.RANGE_LONG];
+                    eRange = rebalanced[RangeType.RANGE_EXTREME];
+                } else {
+                    minRange = 6;
+                    sRange = 7;
+                    mRange = 14;
+                    lRange = 21;
+                    eRange = 28;
+                }
             } else {
                 minRange = 0;
                 sRange = 3;

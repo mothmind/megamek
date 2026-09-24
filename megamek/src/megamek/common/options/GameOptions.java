@@ -187,6 +187,7 @@ public class GameOptions extends BasicGameOptions {
         addOption(advancedRules, OptionsConstants.ADVANCED_ALTERNATE_MASC_ENHANCED, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_SINGLE_BLIND_BOTS, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT, false);
+        addOption(advancedRules, OptionsConstants.ADVANCED_DEAD_RECKONING_WEAPONS, false);
 
         IBasicOptionGroup advancedCombat = addGroup("advancedCombat");
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_AMS, false);

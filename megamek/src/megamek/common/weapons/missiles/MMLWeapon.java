@@ -39,6 +39,9 @@ import java.io.Serial;
 import megamek.common.ToHitData;
 import megamek.common.actions.WeaponAttackAction;
 import megamek.common.equipment.AmmoType;
+import megamek.common.annotations.Nullable;
+import megamek.common.equipment.Mounted;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.game.Game;
 import megamek.common.options.IGameOptions;
 import megamek.common.options.OptionsConstants;
@@ -92,5 +95,21 @@ public abstract class MMLWeapon extends MissileWeapon {
             removeMode("");
             removeMode("Indirect");
         }
+    }
+
+    /**
+     * Stock MML heat is priced on the SRM curve, so an MML pays SRM heat even when it is throwing LRMs. Under the Dead
+     * Reckoning rebalance LRM ammo costs LRM heat instead; SRM ammo is already correct and is left alone.
+     */
+    @Override
+    public int getHeat(@Nullable Mounted<?> mounted) {
+        if ((mounted == null) || !DeadReckoningWeapons.isEnabled(mounted)) {
+            return super.getHeat(mounted);
+        }
+        Mounted<?> ammo = mounted.getLinked();
+        if ((ammo == null) || !(ammo.getType() instanceof AmmoType ammoType) || !ammoType.hasFlag(AmmoType.F_MML_LRM)) {
+            return super.getHeat(mounted);
+        }
+        return DeadReckoningWeapons.mmlLrmHeat(super.getHeat(mounted));
     }
 }

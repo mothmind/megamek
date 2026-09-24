@@ -1077,9 +1077,13 @@ public class FireControl {
         // and damage
         toHit.append(getDamageWeaponMods(shooter, weapon));
 
-        // weapon mods
-        if (0 != weaponType.getToHitModifier(weapon)) {
-            toHit.addModifier(weaponType.getToHitModifier(weapon), TH_WEAPON_MOD);
+        // weapon mods - range-banded for weapons that vary their accuracy with range, so the bot values an AC/2 at
+        // the modifier it will actually get rather than always at its short-range one
+        final int weaponModifier = weaponType.hasHitModifiersByRange()
+              ? weaponType.getToHitModifierAtRange(weapon, range)
+              : weaponType.getToHitModifier(weapon);
+        if (0 != weaponModifier) {
+            toHit.addModifier(weaponModifier, TH_WEAPON_MOD);
         }
 
         // Target size.

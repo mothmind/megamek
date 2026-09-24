@@ -42,12 +42,14 @@ import megamek.common.ToHitData;
 import megamek.common.actions.WeaponAttackAction;
 import megamek.common.alphaStrike.AlphaStrikeElement;
 import megamek.common.annotations.Nullable;
+import megamek.common.equipment.Mounted;
 import megamek.common.compute.Compute;
 import megamek.common.equipment.AmmoType;
 import megamek.common.game.Game;
 import megamek.common.loaders.EntityLoadingException;
 import megamek.common.units.Entity;
 import megamek.common.weapons.AmmoWeapon;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.weapons.handlers.AttackHandler;
 import megamek.common.weapons.handlers.LBXHandler;
 import megamek.common.weapons.handlers.ac.ACWeaponHandler;
@@ -131,5 +133,17 @@ public abstract class LBXACWeapon extends AmmoWeapon {
      */
     protected double getBaseAeroDamage() {
         return Math.ceil(0.6 * this.damage);
+    }
+    @Override
+    public int getToHitModifierAtRange(@Nullable Mounted<?> mounted, int range) {
+        if ((rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) && DeadReckoningWeapons.isEnabled(mounted)) {
+            return DeadReckoningWeapons.ac2ToHitModifierAtRange(range);
+        }
+        return super.getToHitModifierAtRange(mounted, range);
+    }
+
+    @Override
+    public boolean hasHitModifiersByRange() {
+        return (rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) || super.hasHitModifiersByRange();
     }
 }

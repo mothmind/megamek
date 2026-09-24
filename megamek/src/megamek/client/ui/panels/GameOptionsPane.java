@@ -109,6 +109,7 @@ public class GameOptionsPane extends JPanel {
           getTextAt(CLIENT_BUNDLE, "GameOptionsDialog.legend.legacy"));
     private static final Set<String> UNOFFICIAL_OPTIONS = Set.of(
           OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT,
+          OptionsConstants.ADVANCED_DEAD_RECKONING_WEAPONS,
           OptionsConstants.BASE_INFANTRY_DAMAGE_HEAT,
           OptionsConstants.ADVANCED_COMBAT_FULL_ROTOR_HITS,
           OptionsConstants.ADVANCED_SINGLE_BLIND_BOTS,

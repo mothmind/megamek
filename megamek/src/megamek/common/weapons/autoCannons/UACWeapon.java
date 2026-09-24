@@ -42,10 +42,12 @@ import megamek.common.ToHitData;
 import megamek.common.actions.WeaponAttackAction;
 import megamek.common.alphaStrike.AlphaStrikeElement;
 import megamek.common.annotations.Nullable;
+import megamek.common.equipment.Mounted;
 import megamek.common.equipment.AmmoType;
 import megamek.common.game.Game;
 import megamek.common.loaders.EntityLoadingException;
 import megamek.common.weapons.AmmoWeapon;
+import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.weapons.handlers.AttackHandler;
 import megamek.common.weapons.handlers.UltraWeaponHandler;
 import megamek.server.totalWarfare.TWGameManager;
@@ -97,5 +99,17 @@ public abstract class UACWeapon extends AmmoWeapon {
             }
         }
         return damage / 10.0;
+    }
+    @Override
+    public int getToHitModifierAtRange(@Nullable Mounted<?> mounted, int range) {
+        if ((rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) && DeadReckoningWeapons.isEnabled(mounted)) {
+            return DeadReckoningWeapons.ac2ToHitModifierAtRange(range);
+        }
+        return super.getToHitModifierAtRange(mounted, range);
+    }
+
+    @Override
+    public boolean hasHitModifiersByRange() {
+        return (rackSize == DeadReckoningWeapons.AC2_RACK_SIZE) || super.hasHitModifiersByRange();
     }
 }
