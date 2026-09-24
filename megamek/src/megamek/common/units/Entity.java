@@ -16119,12 +16119,23 @@ public abstract class Entity extends TurnOrdered
      * @param vCriticalSlots A map to write critical slot results to
      * @return True if there is a MASC failure, false otherwise
      */
+    /**
+     * The dice for a MASC or Supercharger failure check. Redline Rider knows how far a straining drive can be pushed
+     * and rolls three dice keeping the best two, the same shape the Natural Aptitude abilities use for skill rolls.
+     *
+     * @return the roll to compare against the failure target number
+     */
+    // package-private for testing
+    Roll rollDriveSystemFailureCheck() {
+        return hasAbility(OptionsConstants.PILOT_REDLINE_RIDER) ? Compute.rollD6(3, 2) : Compute.rollD6(2);
+    }
+
     private boolean doMASCOrSuperchargerFailureCheckFor(MiscMounted masc,
                                                         Vector<Report> vDesc,
                                                         HashMap<Integer, List<CriticalSlot>> vCriticalSlots) {
         if ((masc != null) && masc.curMode().equals("Armed")) {
             boolean bFailure = false;
-            Roll diceRoll = Compute.rollD6(2);
+            Roll diceRoll = rollDriveSystemFailureCheck();
             int rollValue = diceRoll.getIntValue();
             String rollCalc = String.valueOf(rollValue);
             boolean isSupercharger = masc.getType().hasFlag(MiscTypeFlag.S_SUPERCHARGER);

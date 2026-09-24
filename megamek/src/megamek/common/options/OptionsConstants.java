@@ -171,6 +171,8 @@ public class OptionsConstants {
     public static final String PILOT_DODGE_MANEUVER = "dodge_maneuver";
 
     public static final String PILOT_DROP_KICK_GURU = "drop_kick_guru";
+
+    public static final String PILOT_REDLINE_RIDER = "redline_rider";
     public static final String PILOT_HVY_LIFTER = "hvy_lifter";
     public static final String PILOT_HOPPING_JACK = "hopping_jack";
     public static final String PILOT_HOT_DOG = "hot_dog";

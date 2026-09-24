@@ -65,6 +65,7 @@ public class PilotOptions extends AbstractOptions {
         addOption(adv, OptionsConstants.PILOT_HOPPING_JACK, false);
         addOption(adv, OptionsConstants.PILOT_HOT_DOG, false);
         addOption(adv, OptionsConstants.PILOT_DROP_KICK_GURU, false);
+        addOption(adv, OptionsConstants.PILOT_REDLINE_RIDER, false);
         addOption(adv, OptionsConstants.PILOT_JUMPING_JACK, false);
         addOption(adv, OptionsConstants.PILOT_MANEUVERING_ACE, false);
         addOption(adv, OptionsConstants.PILOT_MELEE_MASTER, false);
