@@ -166,7 +166,7 @@ class OrbitalStrikeResolutionTest {
 
     @Test
     void noStrikeFromABayThatHasAlreadyFired() {
-        give(new OrbitalBay("Nose", 20, WeaponClass.BALLISTIC, true));
+        give(new OrbitalBay("Invincible", "Nose", 20, WeaponClass.BALLISTIC, 4, true));
 
         assertNull(gameManager.callOrbitalSupportStrike(player, TARGET, "Nose"));
     }

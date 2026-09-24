@@ -70,7 +70,9 @@ class OrbitalStrikeControlTest {
 
     /** A ship whose only bay has already fired. */
     private static final OrbitalSupport EXHAUSTED =
-          new OrbitalSupport("Invincible", java.util.List.of(new OrbitalBay("Nose Bay", 10, OrbitalBay.WeaponClass.BALLISTIC, true)));
+          new OrbitalSupport("Invincible",
+                java.util.List.of(new OrbitalBay("Invincible", "Nose Bay", 10, OrbitalBay.WeaponClass.BALLISTIC, 4,
+                      true)));
 
     private static final int BOARD_ID = 0;
     private static final Coords HEX_A = new Coords(10, 10);

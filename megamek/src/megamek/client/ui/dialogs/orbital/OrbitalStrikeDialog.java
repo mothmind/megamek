@@ -124,16 +124,19 @@ public class OrbitalStrikeDialog extends JDialog {
         bayModel.clear();
         for (OrbitalBay bay : available) {
             bayModel.addElement(Messages.getString("OrbitalStrikeDialog.bayEntry",
-                  bay.name(),
+                  bay.qualifiedName(),
                   bay.damage(),
-                  arrivalText(bay)));
+                  arrivalText(bay),
+                  bay.gunnery()));
         }
         if (!available.isEmpty() && (bayList.getSelectedIndex() < 0)) {
             bayList.setSelectedIndex(0);
         }
 
+        // A force can have several ships on station, so the header names the flotilla rather than a single vessel;
+        // each bay carries its own ship and gunnery in the list below.
         lblShip.setText(support.isAvailable()
-              ? Messages.getString("OrbitalStrikeDialog.ship", support.shipName(), support.gunnery())
+              ? Messages.getString("OrbitalStrikeDialog.ships", String.join(", ", support.shipNames()))
               : Messages.getString("OrbitalStrikeDialog.noShip"));
 
         boolean targeting = client.getGame().getPhase().isTargeting();
