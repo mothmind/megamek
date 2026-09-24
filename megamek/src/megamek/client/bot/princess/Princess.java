@@ -3190,10 +3190,15 @@ public class Princess extends BotClient {
                 return;
             }
 
-            final String bayName = support.heaviestAvailableBay().map(OrbitalBay::name).orElse("");
+            final OrbitalBay heaviest = support.heaviestAvailableBay().orElse(null);
+            if (heaviest == null) {
+                return;
+            }
+
+            final String bayName = heaviest.name();
             orbitalStrikeControl.selectTarget(this, support).ifPresent(target -> {
                 sendChat(Messages.getString("Princess.orbitalStrike.calling",
-                      support.shipName(),
+                      heaviest.shipName(),
                       bayName,
                       target.getBoardNum()));
                 // The bay is named explicitly so the server fires the one the targeting scored against, rather than

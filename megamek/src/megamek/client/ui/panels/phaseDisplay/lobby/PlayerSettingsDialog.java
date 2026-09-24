@@ -345,10 +345,19 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
      * than as a count and a shared value, because a real ship carries different bays and the weapon type decides how
      * long that bay's fire takes to reach the surface.
      */
+    /** Columns of the orbital bay table, in the order it presents them. */
+    private static final int COL_ORBITAL_SHIP = 0;
+    private static final int COL_ORBITAL_BAY = 1;
+    private static final int COL_ORBITAL_AV = 2;
+    private static final int COL_ORBITAL_TYPE = 3;
+    private static final int COL_ORBITAL_GUNNERY = 4;
+
     private final DefaultTableModel orbitalBayModel = new DefaultTableModel(
-          new Object[] { getString("PlayerSettingsDialog.orbitalCol.name"),
+          new Object[] { getString("PlayerSettingsDialog.orbitalCol.ship"),
+                         getString("PlayerSettingsDialog.orbitalCol.name"),
                          getString("PlayerSettingsDialog.orbitalCol.av"),
-                         getString("PlayerSettingsDialog.orbitalCol.type") }, 0) {
+                         getString("PlayerSettingsDialog.orbitalCol.type"),
+                         getString("PlayerSettingsDialog.orbitalCol.gunnery") }, 0) {
         @Override
         public Class<?> getColumnClass(int column) {
             return (column == 1) ? Integer.class : String.class;
@@ -809,36 +818,39 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
             orbitalBayTable.getCellEditor().stopCellEditing();
         }
 
+        // Each row is a bay on a named ship with its own crew, so a player can put a flotilla on station rather
+        // than a single vessel. The fields above only seed new rows.
         List<OrbitalBay> bays = new ArrayList<>();
         for (int row = 0; row < orbitalBayModel.getRowCount(); row++) {
-            int attackValue = parseInteger(orbitalBayModel.getValueAt(row, 1));
+            int attackValue = parseInteger(orbitalBayModel.getValueAt(row, COL_ORBITAL_AV));
             if (attackValue <= 0) {
                 continue;
             }
 
-            Object name = orbitalBayModel.getValueAt(row, 0);
+            Object name = orbitalBayModel.getValueAt(row, COL_ORBITAL_BAY);
             String bayName = ((name == null) || name.toString().isBlank())
                   ? Messages.getString("PlayerSettingsDialog.orbitalBayName", row + 1)
                   : name.toString().trim();
 
-            bays.add(new OrbitalBay(bayName, attackValue, parseWeaponClass(orbitalBayModel.getValueAt(row, 2))));
+            Object ship = orbitalBayModel.getValueAt(row, COL_ORBITAL_SHIP);
+            String shipName = ((ship == null) || ship.toString().isBlank())
+                  ? Messages.getString("PlayerSettingsDialog.orbitalDefaultShip")
+                  : ship.toString().trim();
+
+            // A blank or nonsense skill falls back to Regular rather than handing out a free bullseye.
+            int gunnery = parseInteger(orbitalBayModel.getValueAt(row, COL_ORBITAL_GUNNERY));
+            if (gunnery <= 0) {
+                gunnery = OrbitalSupport.DEFAULT_GUNNERY;
+            }
+
+            bays.add(new OrbitalBay(shipName,
+                  bayName,
+                  attackValue,
+                  parseWeaponClass(orbitalBayModel.getValueAt(row, COL_ORBITAL_TYPE)),
+                  gunnery));
         }
 
-        if (bays.isEmpty()) {
-            player.setOrbitalSupport(OrbitalSupport.NONE);
-            return;
-        }
-
-        String shipName = fldOrbitalShip.getText().isBlank()
-              ? Messages.getString("PlayerSettingsDialog.orbitalDefaultShip")
-              : fldOrbitalShip.getText().trim();
-
-        // A blank or nonsense skill falls back to Regular rather than handing out a free bullseye.
-        int gunnery = parseField(fldOrbitalGunnery);
-        if (gunnery <= 0) {
-            gunnery = OrbitalSupport.DEFAULT_GUNNERY;
-        }
-        player.setOrbitalSupport(new OrbitalSupport(shipName, bays, gunnery));
+        player.setOrbitalSupport(bays.isEmpty() ? OrbitalSupport.NONE : new OrbitalSupport(bays));
     }
 
     /** @return The cell's value as an int, or 0 when it is blank or not a number */
@@ -888,14 +900,20 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
         for (WeaponClass weaponClass : WeaponClass.values()) {
             typeEditor.addItem(weaponClass.name());
         }
-        orbitalBayTable.getColumnModel().getColumn(2).setCellEditor(new DefaultCellEditor(typeEditor));
+        orbitalBayTable.getColumnModel().getColumn(COL_ORBITAL_TYPE).setCellEditor(new DefaultCellEditor(typeEditor));
         orbitalBayTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         orbitalBayTable.setPreferredScrollableViewportSize(new Dimension(320, 90));
 
+        // New rows take the ship and gunnery from the fields above, so adding a broadside one bay at a time does
+        // not mean retyping the vessel for each of them.
         btnOrbitalAddBay.addActionListener(e -> orbitalBayModel.addRow(new Object[] {
+              fldOrbitalShip.getText().isBlank()
+                    ? Messages.getString("PlayerSettingsDialog.orbitalDefaultShip")
+                    : fldOrbitalShip.getText().trim(),
               Messages.getString("PlayerSettingsDialog.orbitalBayName", orbitalBayModel.getRowCount() + 1),
               20,
-              WeaponClass.BALLISTIC.name() }));
+              WeaponClass.BALLISTIC.name(),
+              (parseField(fldOrbitalGunnery) <= 0) ? OrbitalSupport.DEFAULT_GUNNERY : parseField(fldOrbitalGunnery) }));
         btnOrbitalRemoveBay.addActionListener(e -> {
             int row = orbitalBayTable.getSelectedRow();
             if (row >= 0) {
@@ -917,11 +935,17 @@ public class PlayerSettingsDialog extends AbstractButtonDialog {
     private void loadOrbitalBays() {
         orbitalBayModel.setRowCount(0);
         OrbitalSupport support = player.getOrbitalSupport();
-        fldOrbitalShip.setText(support.shipName());
-        fldOrbitalGunnery.setText(String.valueOf(support.gunnery()));
         for (OrbitalBay bay : support.bays()) {
-            orbitalBayModel.addRow(new Object[] { bay.name(), bay.attackValue(), bay.weaponClass().name() });
+            orbitalBayModel.addRow(new Object[] { bay.shipName(), bay.name(), bay.attackValue(),
+                                                  bay.weaponClass().name(), bay.gunnery() });
         }
+
+        // The fields seed new rows rather than holding the package, so they start on the last ship entered - the
+        // one a player adding bays is most likely still working on.
+        List<OrbitalBay> bays = support.bays();
+        OrbitalBay last = bays.isEmpty() ? null : bays.get(bays.size() - 1);
+        fldOrbitalShip.setText((last == null) ? "" : last.shipName());
+        fldOrbitalGunnery.setText(String.valueOf((last == null) ? OrbitalSupport.DEFAULT_GUNNERY : last.gunnery()));
     }
 
     private JPanel mineSection() {

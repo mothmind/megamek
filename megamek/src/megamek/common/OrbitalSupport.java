@@ -34,18 +34,22 @@ package megamek.common;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * The orbital fire support a single player has available for a scenario: a JumpShip or WarShip in orbit assisting the
- * battle with its naval weapon bays rather than taking part in it directly.
+ * The orbital fire support a single player has available for a scenario: the JumpShips and WarShips in orbit
+ * assisting the battle with their naval weapon bays rather than taking part in it directly.
  *
- * <p>The ship is never placed on the board. What the player gets is its list of naval bays, each of which can be
- * fired once. Canon resolves orbit-to-surface fire per bay, not per ship — "the attack from each bay is targeted and
- * resolved separately", with "the base Damage Value of each attack" being "the Attack Value of each bay" (Strategic
- * Operations, p. 103) — so the player picks which guns to spend rather than emptying the broadside at once.</p>
+ * <p>No ship is ever placed on the board. What the player gets is a pooled list of naval bays, each of which can be
+ * fired once and each of which carries the vessel and crew it belongs to. Canon resolves orbit-to-surface fire per
+ * bay, not per ship — "the attack from each bay is targeted and resolved separately", with "the base Damage Value of
+ * each attack" being "the Attack Value of each bay" (Strategic Operations, p. 103) — so a flotilla is simply a
+ * longer list of bays, and the player picks which guns to spend rather than emptying a broadside at once.</p>
  *
  * <p>The blast radius is fixed at {@value #BLAST_RADIUS} hexes for every bay, whatever its Attack Value. The book
  * does not scale it: damage falls off by two multiplier steps per hex, 10/8/6/4/2, and "units more than 4 hexes away
@@ -55,14 +59,12 @@ import java.util.Optional;
  * <p>Instances are immutable. Firing a bay produces a new instance, which keeps the value safe to share between the
  * server's copy of a {@link Player} and the redacted copies sent to clients.</p>
  *
- * @param shipName the vessel providing support, named in reports so the crew knows who is firing
- * @param bays     its naval bays, in the order they are offered to the player
- * @param gunnery  the firing crew's Gunnery skill, which sets the base to-hit number for every strike
+ * @param bays every supporting vessel's naval bays, in the order they are offered to the player
  */
-public record OrbitalSupport(String shipName, List<OrbitalBay> bays, int gunnery) implements Serializable {
+public record OrbitalSupport(List<OrbitalBay> bays) implements Serializable {
 
     @Serial
-    private static final long serialVersionUID = 2L;
+    private static final long serialVersionUID = 3L;
 
     /**
      * The blast radius of every orbital bombardment, in hexes. Fixed by the rules rather than derived from the
@@ -73,22 +75,64 @@ public record OrbitalSupport(String shipName, List<OrbitalBay> bays, int gunnery
     /**
      * The Gunnery skill assumed when none is supplied - Regular, matching the default skill a unit is built with.
      */
-    public static final int DEFAULT_GUNNERY = 4;
+    public static final int DEFAULT_GUNNERY = OrbitalBay.DEFAULT_GUNNERY;
 
     /** No ship is supporting this player. */
-    public static final OrbitalSupport NONE = new OrbitalSupport("", List.of(), DEFAULT_GUNNERY);
+    public static final OrbitalSupport NONE = new OrbitalSupport(List.of());
 
     public OrbitalSupport {
-        shipName = (shipName == null) ? "" : shipName;
-        bays = (bays == null) ? List.of() : List.copyOf(bays);
-        // Clamped rather than rejected: a hostile or corrupt value should degrade to an unusually poor gunner, not
-        // throw during a game.
-        gunnery = Math.clamp(gunnery, 0, 8);
+        // SkyEye: an ArrayList, not List.copyOf. A save game writes this record through XStream 1.4, which cannot
+        // read back Java's immutable list implementations - it writes them as java.util.CollSer and then refuses
+        // its own output ("Cannot deserialize object with new readObject()/writeObject() methods"), taking the
+        // whole save with it. The accessor below hands out an unmodifiable view, so the record is still immutable
+        // to everyone outside it.
+        bays = (bays == null) ? new ArrayList<>() : new ArrayList<>(bays);
+    }
+
+    /** @return The bays, as an unmodifiable view: the backing list is mutable only so that a save game can load. */
+    @Override
+    public List<OrbitalBay> bays() {
+        return Collections.unmodifiableList(bays);
+    }
+
+    /**
+     * Convenience for a single supporting vessel, which is what one ship's worth of bays amounts to.
+     *
+     * @param shipName The vessel the bays belong to, stamped onto any bay that does not already name one
+     * @param bays     Its naval bays
+     * @param gunnery  Its crew's Gunnery skill, applied to any bay that does not already carry one
+     */
+    public OrbitalSupport(String shipName, List<OrbitalBay> bays, int gunnery) {
+        this(stamp(shipName, bays, gunnery));
     }
 
     /** Convenience for callers with no crew skill to hand; assumes a Regular gunner. */
     public OrbitalSupport(String shipName, List<OrbitalBay> bays) {
         this(shipName, bays, DEFAULT_GUNNERY);
+    }
+
+    /**
+     * Stamps a ship and crew onto bays built without one, so the single-vessel constructors still produce bays that
+     * know where they came from.
+     */
+    private static List<OrbitalBay> stamp(String shipName, List<OrbitalBay> bays, int gunnery) {
+        if (bays == null) {
+            return List.of();
+        }
+        return bays.stream()
+                     .map(bay -> bay.shipName().isBlank()
+                           ? new OrbitalBay(shipName, bay.name(), bay.attackValue(), bay.weaponClass(), gunnery,
+                                 bay.spent())
+                           : bay)
+                     .toList();
+    }
+
+    /**
+     * @return The vessels with at least one bay still loaded, in the order their bays are offered and without
+     *       repeats, for callers that want to name who is on station
+     */
+    public List<String> shipNames() {
+        return availableBays().stream().map(OrbitalBay::shipName).filter(name -> !name.isBlank()).distinct().toList();
     }
 
     /** @return The fixed blast radius, for callers that would otherwise hard-code it. */
@@ -154,6 +198,6 @@ public record OrbitalSupport(String shipName, List<OrbitalBay> bays, int gunnery
                 done = true;
             }
         }
-        return new OrbitalSupport(shipName, List.of(updated), gunnery);
+        return new OrbitalSupport(Arrays.asList(updated));
     }
 }

@@ -103,7 +103,7 @@ class OrbitalSupportTest {
     @Test
     void nullNamesBecomeEmpty() {
         assertEquals("", new OrbitalBay(null, 10).name());
-        assertEquals("", new OrbitalSupport(null, List.of()).shipName());
+        assertEquals("", new OrbitalBay(null, null, 10, null, 4, false).shipName());
     }
 
     @Test
@@ -185,7 +185,7 @@ class OrbitalSupportTest {
     @Test
     void anUnspecifiedBayIsTreatedAsBallistic() {
         assertEquals(WeaponClass.BALLISTIC, new OrbitalBay("Nose", 20).weaponClass());
-        assertEquals(WeaponClass.BALLISTIC, new OrbitalBay("Nose", 20, null, false).weaponClass());
+        assertEquals(WeaponClass.BALLISTIC, new OrbitalBay("Invincible", "Nose", 20, null, 4, false).weaponClass());
     }
 
     @Test
@@ -199,16 +199,16 @@ class OrbitalSupportTest {
     @Test
     void gunneryDefaultsToRegularWhenNotSupplied() {
         assertEquals(4, OrbitalSupport.DEFAULT_GUNNERY);
-        assertEquals(4, shipWith(new OrbitalBay("Nose", 20)).gunnery());
-        assertEquals(4, OrbitalSupport.NONE.gunnery());
+        assertEquals(4, shipWith(new OrbitalBay("Nose", 20)).bays().get(0).gunnery());
     }
 
     @Test
     void gunneryIsCarriedAndClamped() {
-        assertEquals(2, new OrbitalSupport("Elite", List.of(new OrbitalBay("Nose", 20)), 2).gunnery());
+        assertEquals(2,
+              new OrbitalSupport("Elite", List.of(new OrbitalBay("Nose", 20)), 2).bays().get(0).gunnery());
         // Clamped rather than rejected, so a bad value degrades to a poor gunner instead of throwing mid-game.
-        assertEquals(0, new OrbitalSupport("Impossible", List.of(), -5).gunnery());
-        assertEquals(8, new OrbitalSupport("Hopeless", List.of(), 99).gunnery());
+        assertEquals(0, new OrbitalBay("Impossible", "Nose", 20, null, -5).gunnery());
+        assertEquals(8, new OrbitalBay("Hopeless", "Nose", 20, null, 99).gunnery());
     }
 
     @Test
@@ -216,15 +216,51 @@ class OrbitalSupportTest {
         OrbitalSupport after = new OrbitalSupport("Elite",
               List.of(new OrbitalBay("Nose", 40), new OrbitalBay("Aft", 10)), 1).bayFired("Nose");
 
-        assertEquals(1, after.gunnery());
-        assertEquals("Elite", after.shipName());
+        assertEquals(1, after.bays().get(0).gunnery());
+        assertEquals("Elite", after.bays().get(0).shipName());
+    }
+
+    @Test
+    void severalShipsPoolTheirBays() {
+        OrbitalSupport flotilla = new OrbitalSupport(List.of(
+              new OrbitalBay("Invincible", "Nose", 40, WeaponClass.ENERGY, 2),
+              new OrbitalBay("Invincible", "Aft", 10, WeaponClass.BALLISTIC, 2),
+              new OrbitalBay("Vigilant", "Nose", 30, WeaponClass.BALLISTIC, 5)));
+
+        assertEquals(3, flotilla.strikesRemaining());
+        assertEquals(List.of("Invincible", "Vigilant"), flotilla.shipNames());
+    }
+
+    @Test
+    void aShipDropsOutOfTheListOnceItsBaysAreSpent() {
+        OrbitalSupport flotilla = new OrbitalSupport(List.of(
+              new OrbitalBay("Invincible", "Nose", 40, WeaponClass.ENERGY, 2),
+              new OrbitalBay("Vigilant", "Aft", 30, WeaponClass.BALLISTIC, 5))).bayFired("Aft");
+
+        assertEquals(List.of("Invincible"), flotilla.shipNames());
+    }
+
+    @Test
+    void eachShipKeepsItsOwnGunnersWhenAnotherFires() {
+        OrbitalSupport flotilla = new OrbitalSupport(List.of(
+              new OrbitalBay("Invincible", "Nose", 40, WeaponClass.ENERGY, 2),
+              new OrbitalBay("Vigilant", "Aft", 30, WeaponClass.BALLISTIC, 5))).bayFired("Nose");
+
+        assertEquals(5, flotilla.availableBays().get(0).gunnery());
+        assertEquals("Vigilant", flotilla.availableBays().get(0).shipName());
+    }
+
+    @Test
+    void aBayIsQualifiedByItsShipOnlyWhenItHasOne() {
+        assertEquals("Invincible Nose", new OrbitalBay("Invincible", "Nose", 40, null, 4).qualifiedName());
+        assertEquals("Nose", new OrbitalBay("Nose", 40).qualifiedName());
     }
 
     @Test
     void availableBaysExcludeSpentOnes() {
         OrbitalSupport support = new OrbitalSupport("Invincible",
-              List.of(new OrbitalBay("Nose", 40, WeaponClass.BALLISTIC, true),
-                    new OrbitalBay("Aft", 10, WeaponClass.BALLISTIC, false)));
+              List.of(new OrbitalBay("Invincible", "Nose", 40, WeaponClass.BALLISTIC, 4, true),
+                    new OrbitalBay("Invincible", "Aft", 10, WeaponClass.BALLISTIC, 4, false)));
 
         assertEquals(1, support.availableBays().size());
         assertEquals("Aft", support.availableBays().get(0).name());

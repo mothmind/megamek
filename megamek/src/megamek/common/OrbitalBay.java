@@ -47,13 +47,19 @@ import java.io.Serializable;
  * a bay to fire every six ground turns — but it keeps a player choosing which guns to spend rather than emptying the
  * whole broadside into the first target of opportunity.</p>
  *
+ * <p>A bay knows which vessel it belongs to and what that vessel's gunners are worth. A force can have more than
+ * one ship on station, and a bay is resolved on its own, so the ship and the Gunnery that decide the shot have to
+ * travel with the bay rather than sit on the force as a whole.</p>
+ *
+ * @param shipName     the vessel this bay is aboard, named in reports so the crew knows who is firing
  * @param name         the bay's name, as reports and the bay list show it
  * @param attackValue  the bay's Attack Value in capital scale
  * @param weaponClass  what kind of guns the bay holds, which decides how long the shot takes to arrive
+ * @param gunnery      the firing crew's Gunnery skill, which sets the base to-hit number for this bay's strikes
  * @param spent        whether this bay has already fired this scenario
  */
-public record OrbitalBay(String name, int attackValue, WeaponClass weaponClass, boolean spent)
-      implements Serializable {
+public record OrbitalBay(String shipName, String name, int attackValue, WeaponClass weaponClass, int gunnery,
+                         boolean spent) implements Serializable {
 
     /**
      * How long a bay's fire takes to reach the surface, which StratOps p.103 sets by weapon type rather than by
@@ -95,19 +101,40 @@ public record OrbitalBay(String name, int attackValue, WeaponClass weaponClass, 
     /** Capital scale to standard scale: "every point of which equates to 10 points of standard-scale damage". */
     public static final int CAPITAL_TO_STANDARD = 10;
 
+    /**
+     * The Gunnery skill assumed when none is supplied - Regular, matching the default skill a unit is built with.
+     */
+    public static final int DEFAULT_GUNNERY = 4;
+
     public OrbitalBay {
+        shipName = (shipName == null) ? "" : shipName;
         name = (name == null) ? "" : name;
         attackValue = Math.max(0, attackValue);
         weaponClass = (weaponClass == null) ? WeaponClass.BALLISTIC : weaponClass;
+        // Clamped rather than rejected: a hostile or corrupt value should degrade to an unusually poor gunner, not
+        // throw during a game.
+        gunnery = Math.clamp(gunnery, 0, 8);
     }
 
-    /** A bay of unspecified guns; treated as ballistic, the commonest naval armament. */
+    /** A bay of unspecified guns aboard an unnamed ship; treated as ballistic, the commonest naval armament. */
     public OrbitalBay(String name, int attackValue) {
-        this(name, attackValue, WeaponClass.BALLISTIC, false);
+        this("", name, attackValue, WeaponClass.BALLISTIC, DEFAULT_GUNNERY, false);
     }
 
     public OrbitalBay(String name, int attackValue, WeaponClass weaponClass) {
-        this(name, attackValue, weaponClass, false);
+        this("", name, attackValue, weaponClass, DEFAULT_GUNNERY, false);
+    }
+
+    public OrbitalBay(String shipName, String name, int attackValue, WeaponClass weaponClass, int gunnery) {
+        this(shipName, name, attackValue, weaponClass, gunnery, false);
+    }
+
+    /**
+     * @return This bay's name qualified by its ship, so two ships on station with the same bay can be told apart in
+     *       a list. A bay with no ship recorded is shown by its own name alone.
+     */
+    public String qualifiedName() {
+        return shipName.isBlank() ? name : shipName + " " + name;
     }
 
     /**
@@ -126,6 +153,6 @@ public record OrbitalBay(String name, int attackValue, WeaponClass weaponClass, 
 
     /** @return A copy marked as having fired. */
     public OrbitalBay fired() {
-        return spent ? this : new OrbitalBay(name, attackValue, weaponClass, true);
+        return spent ? this : new OrbitalBay(shipName, name, attackValue, weaponClass, gunnery, true);
     }
 }

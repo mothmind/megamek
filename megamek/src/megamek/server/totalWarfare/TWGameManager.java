@@ -20067,8 +20067,9 @@ public class TWGameManager extends AbstractGameManager {
         OrbitalBay bay = chosen.get();
 
         // StratOps p.103: "Each orbit-to-surface attack is resolved using the Artillery rules", with the additions
-        // below. The base number is the firing vessel's own Gunnery.
-        int toHit = support.gunnery();
+        // below. The base number is the firing vessel's own Gunnery, read from the bay because a force can have more
+        // than one ship on station and they need not be crewed alike.
+        int toHit = bay.gunnery();
         toHit += ORBITAL_IMMOBILE_HEX_MODIFIER;
         if (isHexTagged(position)) {
             toHit += ORBITAL_TAG_MODIFIER;
@@ -20092,7 +20093,7 @@ public class TWGameManager extends AbstractGameManager {
 
         Report attackReport = new Report(1304, Report.PUBLIC);
         attackReport.indent();
-        attackReport.add(support.shipName());
+        attackReport.add(bay.shipName());
         attackReport.add(bay.name());
         attackReport.add(position.getBoardNum());
         attackReport.add(toHit);
@@ -20107,7 +20108,7 @@ public class TWGameManager extends AbstractGameManager {
               .damage(bay.damage())
               .radius(OrbitalSupport.BLAST_RADIUS)
               .playerId(player.getId())
-              .shipName(support.shipName())
+              .shipName(bay.shipName())
               .bayName(bay.name())
               .aimPoint(position)
               .turnsUntilImpact(delay)

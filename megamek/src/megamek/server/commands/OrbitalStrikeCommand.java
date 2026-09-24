@@ -128,7 +128,7 @@ public class OrbitalStrikeCommand extends GamemasterServerCommand {
 
         server.sendServerChat(connId,
               Messages.getString("Orbital.cmd.orbitalStrike.success",
-                    before.shipName(),
+                    fired.shipName(),
                     fired.name(),
                     fired.damage(),
                     position.getBoardNum(),
@@ -144,7 +144,7 @@ public class OrbitalStrikeCommand extends GamemasterServerCommand {
             return Messages.getString("Orbital.cmd.orbitalStrike.noBaysLeft");
         }
         return available.stream()
-              .map(bay -> bay.name() + " (" + bay.damage() + ")")
+              .map(bay -> bay.qualifiedName() + " (" + bay.damage() + ")")
               .collect(java.util.stream.Collectors.joining(", "));
     }
 }
