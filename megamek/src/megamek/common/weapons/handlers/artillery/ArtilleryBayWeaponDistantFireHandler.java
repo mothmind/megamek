@@ -405,9 +405,11 @@ public class ArtilleryBayWeaponDistantFireHandler extends AmmoBayWeaponHandler {
                   new SpecialHexDisplay(SpecialHexDisplay.Type.ARTILLERY_HIT,
                         game.getRoundCount(), game.getPlayer(aaa.getPlayerId()), artyMsg));
         } else {
-            // Oblique Artilleryman reduces scatter distance by two hexes, minimum 0 (CamOps p.78, 5th printing).
+            // Oblique Artilleryman reduces scatter distance by two hexes (CamOps p.78, 5th printing), but a drift
+            // reduced to nothing lands one hex out half the time - Dead Reckoning house rule, so the ability can
+            // never guarantee a direct hit.
             int scatterReduction = attackingEntity.hasAbility(OptionsConstants.GUNNERY_OBLIQUE_ARTILLERY)
-                  ? Scatter.SPA_SCATTER_REDUCTION : 0;
+                  ? Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP : 0;
             ScatterMethod scatterMethod = ScatterMethod.forGame(game);
             // We're only going to display one missed shot hex on the board, at the intended
             // target

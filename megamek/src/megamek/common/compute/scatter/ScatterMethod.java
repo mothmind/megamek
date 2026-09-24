@@ -46,7 +46,7 @@ public enum ScatterMethod {
     STANDARD {
         @Override
         public ScatterResult omnidirectional(Coords target, int standardDistance, int marginOfFailure, int reduction) {
-            return Scatter.omnidirectional(target, Math.max(standardDistance - reduction, 0));
+            return Scatter.omnidirectional(target, Scatter.applyReduction(standardDistance, reduction));
         }
 
         @Override

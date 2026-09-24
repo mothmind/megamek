@@ -48,12 +48,39 @@ import megamek.common.compute.Compute;
 public final class Scatter {
 
     /**
-     * Hexes by which the Oblique Artilleryman and Golden Goose abilities reduce a missed shot's scatter distance, to a
-     * minimum of {@code 0} (CamOps, 5th printing: Oblique Artilleryman p.78, Golden Goose p.75).
+     * Hexes by which the Golden Goose ability reduces a missed shot's scatter distance, to a minimum of {@code 0}
+     * (CamOps, 5th printing, p.75). Oblique Artilleryman uses {@link #SPA_SCATTER_REDUCTION_COIN_FLIP} instead.
      */
     public static final int SPA_SCATTER_REDUCTION = 2;
 
+    /**
+     * Reduction sentinel for the Dead Reckoning house rule: subtract {@link #SPA_SCATTER_REDUCTION} as normal, but when
+     * that would pull the drift all the way back onto the aim point, the shot lands one hex out half the time instead.
+     * By CamOps the reduction floors at {@code 0}, which makes a direct hit certain at the low target numbers adjusted
+     * fire produces; the coin flip keeps the ability strong without ever guaranteeing the shell lands on the hex.
+     */
+    public static final int SPA_SCATTER_REDUCTION_COIN_FLIP = -1;
+
     private Scatter() {}
+
+    /**
+     * Applies a scatter-distance reduction.
+     *
+     * @param distance  the unreduced scatter distance in hexes
+     * @param reduction hexes to subtract, or {@link #SPA_SCATTER_REDUCTION_COIN_FLIP} for the house rule
+     *
+     * @return the reduced distance, no less than {@code 0}
+     */
+    static int applyReduction(int distance, int reduction) {
+        if (reduction != SPA_SCATTER_REDUCTION_COIN_FLIP) {
+            return Math.max(distance - reduction, 0);
+        }
+        int reduced = Math.max(distance - SPA_SCATTER_REDUCTION, 0);
+        if ((distance > 0) && (reduced == 0)) {
+            return (Compute.d6(1) > 3) ? 1 : 0;
+        }
+        return reduced;
+    }
 
     /**
      * @param marginOfFailure the attack's margin of failure (sign ignored)
@@ -66,12 +93,12 @@ public final class Scatter {
 
     /**
      * @param marginOfFailure the attack's margin of failure (sign ignored)
-     * @param reduction       hexes to subtract (e.g. Oblique Artilleryman or Golden Goose)
+     * @param reduction       hexes to subtract (e.g. Golden Goose), or {@link #SPA_SCATTER_REDUCTION_COIN_FLIP}
      *
      * @return the standard scatter distance after the reduction, no less than {@code 0}
      */
     public static int reducedDistance(int marginOfFailure, int reduction) {
-        return Math.max(standardDistance(marginOfFailure) - reduction, 0);
+        return applyReduction(standardDistance(marginOfFailure), reduction);
     }
 
     /**
@@ -130,7 +157,7 @@ public final class Scatter {
     public static ScatterResult advanced(Coords target, int marginOfFailure, int reduction) {
         int dice = diceCount(marginOfFailure);
         int direction = Compute.d6(1) - 1;
-        int firstLeg = Math.max(Compute.d6(dice) - reduction, 0);
+        int firstLeg = applyReduction(Compute.d6(dice), reduction);
         Coords intermediate = target.translated(direction, firstLeg);
         Coords landing = intermediate.translated((direction + 2) % 6, Compute.d6(dice));
         return new ScatterResult(landing, target.distance(landing));
@@ -152,7 +179,7 @@ public final class Scatter {
         int dice = diceCount(marginOfFailure);
         boolean startLeft = Compute.d6(1) <= 3;
         int direction = startLeft ? Math.floorMod(facing - 1, 6) : Math.floorMod(facing + 1, 6);
-        int firstLeg = Math.max(Compute.d6(dice) - reduction, 0);
+        int firstLeg = applyReduction(Compute.d6(dice), reduction);
         Coords intermediate = target.translated(direction, firstLeg);
         int secondDirection = startLeft ? Math.floorMod(direction + 2, 6) : Math.floorMod(direction - 2, 6);
         int secondLeg = Math.max(Compute.d6(dice) - dice, 0);
