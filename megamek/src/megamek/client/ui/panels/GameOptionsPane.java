@@ -108,6 +108,7 @@ public class GameOptionsPane extends JPanel {
     private static final SettingsBadge LEGACY_BADGE = new SettingsBadge(LEGACY_ICON, null,
           getTextAt(CLIENT_BUNDLE, "GameOptionsDialog.legend.legacy"));
     private static final Set<String> UNOFFICIAL_OPTIONS = Set.of(
+          OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT,
           OptionsConstants.BASE_INFANTRY_DAMAGE_HEAT,
           OptionsConstants.ADVANCED_COMBAT_FULL_ROTOR_HITS,
           OptionsConstants.ADVANCED_SINGLE_BLIND_BOTS,

@@ -301,7 +301,8 @@ final class GameOptionsPresentation {
               OptionsConstants.ADVANCED_STRATOPS_PARTIAL_REPAIRS,
               OptionsConstants.ADVANCED_MAX_TECH_MOVEMENT_MODS,
               OptionsConstants.ADVANCED_ALTERNATE_MASC,
-              OptionsConstants.ADVANCED_ALTERNATE_MASC_ENHANCED);
+              OptionsConstants.ADVANCED_ALTERNATE_MASC_ENHANCED,
+              OptionsConstants.ADVANCED_ORBITAL_BOMBARDMENT_SUPPORT);
         register(ADVANCED_RULES, MOVEMENT_INFANTRY, "movement.infantry.positions",
               OptionsConstants.ADVANCED_TAC_OPS_DIG_IN,
               OptionsConstants.ADVANCED_TAC_OPS_TAKE_COVER);
