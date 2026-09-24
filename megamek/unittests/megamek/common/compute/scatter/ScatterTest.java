@@ -177,6 +177,33 @@ class ScatterTest {
               .distanceHexes(), "the reduction must never push the drift below zero");
     }
 
+    @Test
+    @DisplayName("the coin-flip reduction subtracts two hexes exactly as the flat reduction does on a wide miss")
+    void coinFlipReductionMatchesFlatReductionOnAWideMiss() {
+        assertEquals(1, Scatter.reducedDistance(3, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
+        assertEquals(1, Scatter.reducedDistance(-3, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
+        assertEquals(8, Scatter.reducedDistance(-10, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
+    }
+
+    @Test
+    @DisplayName("a drift the coin-flip reduction would cancel lands one hex out roughly half the time")
+    void coinFlipReductionSometimesKeepsAOneHexDrift() {
+        Coords target = new Coords(6, 9);
+        for (int marginOfFailure : new int[] { -1, -2 }) {
+            int drifted = 0;
+            for (int trial = 0; trial < 2000; trial++) {
+                int distance = ScatterMethod.STANDARD
+                      .omnidirectional(target, marginOfFailure, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP)
+                      .distanceHexes();
+                assertTrue((distance == 0) || (distance == 1),
+                      "a cancelled drift must land on the target hex or one hex out, got " + distance);
+                drifted += distance;
+            }
+            assertTrue((drifted > 800) && (drifted < 1200),
+                  "missing by " + -marginOfFailure + " must drift roughly half the time, got " + drifted + "/2000");
+        }
+    }
+
     /** @return whether {@code hex} lies on one of the six straight-line directions from {@code target} */
     private static boolean isOnStraightLine(Coords target, Coords hex) {
         int distance = target.distance(hex);
