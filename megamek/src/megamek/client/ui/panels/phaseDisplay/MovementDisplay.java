@@ -1021,6 +1021,7 @@ public class MovementDisplay extends ActionPhaseDisplay {
         updateConvertModeButton();
         updateRecklessButton();
         updateBraceButton();
+        updatePoseButton();
         updateClimbButton();
         updateHoverButton();
         updateManeuverButton();
@@ -1905,6 +1906,7 @@ public class MovementDisplay extends ActionPhaseDisplay {
         setClearEnabled(false);
         setHullDownEnabled(false);
         setBraceEnabled(false);
+        setPoseEnabled(false);
         setSwimEnabled(false);
         setModeConvertEnabled(false);
         setAccEnabled(false);
@@ -2075,6 +2077,7 @@ public class MovementDisplay extends ActionPhaseDisplay {
         updateConvertModeButton();
         updateRecklessButton();
         updateBraceButton();
+        updatePoseButton();
         updateClimbButton();
         updateHoverButton();
         updateManeuverButton();
@@ -3322,6 +3325,7 @@ public class MovementDisplay extends ActionPhaseDisplay {
         updateTakeCoverButton();
         updateLayMineButton();
         updateBraceButton();
+        updatePoseButton();
         checkFuel();
         checkOOC();
         checkAtmosphere();
@@ -4198,6 +4202,11 @@ public class MovementDisplay extends ActionPhaseDisplay {
         setBraceEnabled(!movePath.contains(MoveStepType.BRACE) &&
                         movePath.isValidPositionForBrace(movePath.getFinalCoords(), finalBoardId(),
                                                          movePath.getFinalFacing()));
+    }
+
+    private void updatePoseButton() {
+        final Entity currentEntity = currentEntity();
+        setPoseEnabled((currentEntity != null) && currentEntity.canPose());
     }
 
     private void updateClimbButton() {
@@ -7326,6 +7335,13 @@ public class MovementDisplay extends ActionPhaseDisplay {
                     updateDonePanel();
                 }
             }
+        } else if (actionCmd.equals(MoveCommand.MOVE_POSE.getCmd())) {
+            clear();
+            addStepToMovePath(MoveStepType.POSE);
+            ready();
+            if (currentEntity != Entity.NONE) {
+                cmd.removeLastStep();
+            }
         } else if (actionCmd.equals(MoveCommand.MOVE_FLEE.getCmd()) &&
                    clientgui.doYesNoDialog(Messages.getString("MovementDisplay.EscapeDialog.title"),
                                            Messages.getString("MovementDisplay.EscapeDialog.message"))) {
@@ -8456,6 +8472,11 @@ public class MovementDisplay extends ActionPhaseDisplay {
     private void setBraceEnabled(boolean enabled) {
         getBtn(MoveCommand.MOVE_BRACE).setEnabled(enabled);
         clientgui.getMenuBar().setEnabled(MoveCommand.MOVE_BRACE.getCmd(), enabled);
+    }
+
+    private void setPoseEnabled(boolean enabled) {
+        getBtn(MoveCommand.MOVE_POSE).setEnabled(enabled);
+        clientgui.getMenuBar().setEnabled(MoveCommand.MOVE_POSE.getCmd(), enabled);
     }
 
     private void setClearEnabled(boolean enabled) {

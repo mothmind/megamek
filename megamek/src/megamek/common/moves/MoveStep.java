@@ -2236,6 +2236,9 @@ public class MoveStep implements Serializable {
         if (type == MoveStepType.UNJAM_RAC) {
             movementType = EntityMovementType.MOVE_NONE;
         }
+        if (type == MoveStepType.POSE) {
+            movementType = EntityMovementType.MOVE_NONE;
+        }
         // infantry are allowed to clear mines
         if ((type == MoveStepType.CLEAR_MINEFIELD) && (entity instanceof Infantry)) {
             movementType = EntityMovementType.MOVE_NONE;
@@ -3009,6 +3012,12 @@ public class MoveStep implements Serializable {
             }
         }
         if (prev.type == MoveStepType.LAY_MINE && !prev.isFirstStep()) {
+            movementType = EntityMovementType.MOVE_ILLEGAL;
+            return;
+        }
+
+        if ((prev.type == MoveStepType.POSE)
+              || ((stepType == MoveStepType.POSE) && (!isFirstStep() || !entity.canPose()))) {
             movementType = EntityMovementType.MOVE_ILLEGAL;
             return;
         }

@@ -42,10 +42,12 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.Vector;
 import java.util.zip.GZIPInputStream;
@@ -281,6 +283,7 @@ public class MULParser {
     public static final String ATTR_BA_MEA_TYPE_NAME = "baMEATypeName";
     public static final String ATTR_KILLED = "killed";
     public static final String ATTR_KILLER = "killer";
+    public static final String ATTR_POSED = "posed";
     public static final String ATTR_DAMAGE_TAKEN = "damageTaken";
     private static final String EXTRA_DATA = "extraData";
     public static final String ATTR_ARMOR_NAME = "armorName";
@@ -371,6 +374,11 @@ public class MULParser {
      */
     private final Hashtable<String, String> kills;
 
+    /**
+     * The names of killed units whose killer was posing when it made the kill
+     */
+    private final Set<String> posedKills;
+
     StringBuffer warning;
 
     /**
@@ -405,6 +413,7 @@ public class MULParser {
         retreated = new Vector<>();
         devastated = new Vector<>();
         kills = new Hashtable<>();
+        posedKills = new HashSet<>();
         pilots = new Vector<>();
     }
 
@@ -662,6 +671,9 @@ public class MULParser {
                     String killer = ((Element) currNode).getAttribute(ATTR_KILLER);
                     if (!killed.isBlank() && !killer.isBlank()) {
                         kills.put(killed, killer);
+                        if (Boolean.parseBoolean(((Element) currNode).getAttribute(ATTR_POSED))) {
+                            posedKills.add(killed);
+                        }
                     }
                 }
             }
@@ -3234,6 +3246,13 @@ public class MULParser {
      */
     public Hashtable<String, String> getKills() {
         return kills;
+    }
+
+    /**
+     * @return the names of killed units whose killer was posing when it made the kill
+     */
+    public Set<String> getPosedKills() {
+        return posedKills;
     }
 
     /**

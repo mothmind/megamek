@@ -4528,6 +4528,11 @@ public abstract class Mek extends Entity implements Fortifiable, RubbleClearer, 
               && getCrew().isClanPilot());
     }
 
+    @Override
+    public boolean canPose() {
+        return getCrew().isActive() && !isShutDown() && !isProne() && !isAirborne();
+    }
+
     /**
      * @return the total number of sinks
      */

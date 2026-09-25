@@ -122,7 +122,8 @@ public enum MoveStepType {
     PICKUP_CARGO(false, "Pickup Cargo"),
     DROP_CARGO(false, "Drop Cargo"),
     CHANGE_BOARD(true, "Change Board"),
-    DEPLOY(false, "Deploy");
+    DEPLOY(false, "Deploy"),
+    POSE(false, "Pose");
 
     private final boolean entersNewHex;
     private final String humanReadableLabel;

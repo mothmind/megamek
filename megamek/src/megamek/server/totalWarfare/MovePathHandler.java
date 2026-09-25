@@ -286,6 +286,20 @@ class MovePathHandler extends AbstractTWRuleHandler {
     }
 
     /**
+     * Marks the unit as posing for the rest of the round, which gives up its movement, and reports the pose.
+     *
+     * @param entity the unit striking the pose
+     * @return the report announcing the pose
+     */
+    static Report strikePose(Entity entity) {
+        entity.setPosing(true);
+        Report report = new Report(2028);
+        report.subject = entity.getId();
+        report.addDesc(entity);
+        return report;
+    }
+
+    /**
      * Checks whether the TW p.54 rule applies that VTOL-capable creatures must spend 1 MP per turn, even if remaining
      * stationary. This is a pure check with no side effects: when it returns {@code true}, the caller
      * ({@code processMovement()}) converts the entity's movement type to {@link EntityMovementType#MOVE_VTOL_WALK} and
@@ -3066,6 +3080,11 @@ class MovePathHandler extends AbstractTWRuleHandler {
                 if (!(entity.isAirborne())) {
                     break;
                 }
+            }
+
+            if (step.getType() == MoveStepType.POSE) {
+                addReport(strikePose(entity));
+                break;
             }
 
             if (step.getType() == MoveStepType.LAY_MINE) {

@@ -470,6 +470,10 @@ public class ComputeAttackerToHitMods {
         // Virtual Reality Piloting Pod (IO:AE p.63): -1 gunnery, or +2 while friendly ECCM holds off interference
         VirtualRealityPilotingPod.addGunneryModifier(attacker, toHit);
 
+        if (isShowboating(attacker)) {
+            toHit.addModifier(-1, Messages.getString("WeaponAttackAction.Showboat"));
+        }
+
         // Sensory implants: laser-sight, telescopic, or multi-modal = -1 to-hit
         // Benefits don't stack - having multiple still only gives -1
         // Basic implants (laser/tele): infantry only
@@ -509,6 +513,18 @@ public class ComputeAttackerToHitMods {
         }
 
         return toHit;
+    }
+
+    /**
+     * Whether the attacker's pilot is showboating: they have the Showboat ability and their unit struck a pose this
+     * round, which earns their weapon attacks a -1 to-hit.
+     *
+     * @param attacker the attacking unit
+     *
+     * @return whether the Showboat modifier applies
+     */
+    public static boolean isShowboating(Entity attacker) {
+        return attacker.isPosing() && attacker.hasAbility(OptionsConstants.GUNNERY_SHOWBOAT);
     }
 
     private ComputeAttackerToHitMods() {}

@@ -207,6 +207,7 @@ public class OptionsConstants {
     public static final String GUNNERY_SNIPER = "sniper";
 
     public static final String GUNNERY_TRIGGER_DISCIPLINE = "trigger_discipline";
+    public static final String GUNNERY_SHOWBOAT = "showboat";
     public static final String GUNNERY_WEAPON_SPECIALIST = "weapon_specialist";
 
     // MISC ABILITIES

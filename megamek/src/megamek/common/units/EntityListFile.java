@@ -841,6 +841,7 @@ public class EntityListFile {
         ArrayList<Entity> retreated = new ArrayList<>();
         ArrayList<Entity> devastated = new ArrayList<>();
         Hashtable<String, String> kills = new Hashtable<>();
+        Set<String> posedKills = new HashSet<>();
 
         // Sort entities into player's, enemies, and allies and add to survivors,
         // salvage, and allies.
@@ -878,6 +879,9 @@ public class EntityListFile {
                 Entity killer = client.getGame().getEntityFromAllSources(entity.getKillerId());
                 if (killer != null && !killer.getExternalIdAsString().equals("-1")) {
                     kills.put(entity.getDisplayName(), killer.getExternalIdAsString());
+                    if (entity.wasKilledByPosingUnit()) {
+                        posedKills.add(entity.getDisplayName());
+                    }
                 } else {
                     kills.put(entity.getDisplayName(), MULParser.VALUE_NONE);
                 }
@@ -893,6 +897,9 @@ public class EntityListFile {
                 Entity killer = client.getGame().getEntityFromAllSources(entity.getKillerId());
                 if (killer != null && !killer.getExternalIdAsString().equals("-1")) {
                     kills.put(entity.getDisplayName(), killer.getExternalIdAsString());
+                    if (entity.wasKilledByPosingUnit()) {
+                        posedKills.add(entity.getDisplayName());
+                    }
                 } else {
                     kills.put(entity.getDisplayName(), MULParser.VALUE_NONE);
                 }
@@ -938,7 +945,7 @@ public class EntityListFile {
         if (!kills.isEmpty()) {
             output.write("\n");
             output.write(indentStr(1) + '<' + MULParser.ELE_KILLS + ">\n\n");
-            writeKills(output, kills);
+            writeKills(output, kills, posedKills);
             output.write(indentStr(1) + "</" + MULParser.ELE_KILLS + ">\n");
         }
 
@@ -962,13 +969,17 @@ public class EntityListFile {
         return teamAsLiving && (owner.getTeam() == localPlayer.getTeam());
     }
 
-    private static void writeKills(Writer output, Hashtable<String, String> kills) throws IOException {
+    static void writeKills(Writer output, Hashtable<String, String> kills, Set<String> posedKills)
+          throws IOException {
         int indentLvl = 2;
         for (String killed : kills.keySet()) {
             output.write(indentStr(indentLvl) + '<' + MULParser.ELE_KILL + ' ' + MULParser.ATTR_KILLED + "=\"");
             output.write(killed.replace("\"", "&quot;"));
             output.write("\" " + MULParser.ATTR_KILLER + "=\"");
             output.write(kills.get(killed));
+            if (posedKills.contains(killed)) {
+                output.write("\" " + MULParser.ATTR_POSED + "=\"true");
+            }
             output.write("\"/>\n");
         }
     }

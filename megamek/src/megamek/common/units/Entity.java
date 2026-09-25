@@ -436,6 +436,7 @@ public abstract class Entity extends TurnOrdered
     protected boolean findingClub = false;
     protected boolean armsFlipped = false;
     protected boolean unjammingRAC = false;
+    protected boolean posing = false;
     protected boolean selfDestructing = false;
     protected boolean selfDestructInitiated = false;
     protected boolean boobyTrapInitiated = false;
@@ -530,6 +531,7 @@ public abstract class Entity extends TurnOrdered
     private boolean clearingMinefield = false;
     private boolean clearingWoods = false;
     protected int killerId = Entity.NONE;
+    private boolean killedByPosingUnit = false;
     private int offBoardDistance = 0;
     private OffBoardDirection offBoardDirection = OffBoardDirection.NONE;
     private OffBoardDirection retreatedDirection = OffBoardDirection.NONE;
@@ -2506,6 +2508,24 @@ public abstract class Entity extends TurnOrdered
 
     public void setUnjammingRAC(boolean u) {
         unjammingRAC = u;
+    }
+
+    /**
+     * @return true if this unit gave up its movement this round to strike a pose
+     */
+    public boolean isPosing() {
+        return posing;
+    }
+
+    public void setPosing(boolean posing) {
+        this.posing = posing;
+    }
+
+    /**
+     * @return true if this unit is able to strike a pose in the movement phase, in place of moving
+     */
+    public boolean canPose() {
+        return false;
     }
 
     public boolean isFindingClub() {
@@ -7949,6 +7969,7 @@ public abstract class Entity extends TurnOrdered
         setClearingMinefield(false);
         setClearingWoods(false);
         setUnjammingRAC(false);
+        setPosing(false);
         crew.setKoThisRound(false);
         m_lNarcedBy |= m_lPendingNarc;
 
@@ -11592,6 +11613,14 @@ public abstract class Entity extends TurnOrdered
 
     public void addKill(Entity kill) {
         kill.killerId = id;
+        kill.killedByPosingUnit = posing;
+    }
+
+    /**
+     * @return true if the unit credited with killing this one was posing in the round it made the kill
+     */
+    public boolean wasKilledByPosingUnit() {
+        return killedByPosingUnit;
     }
 
     public boolean getGaveKillCredit() {
