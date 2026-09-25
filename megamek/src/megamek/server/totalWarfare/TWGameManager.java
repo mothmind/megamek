@@ -26818,6 +26818,35 @@ public class TWGameManager extends AbstractGameManager {
     }
 
     /**
+     * Brings units into a battle already under way, straight from the host, to deploy in the given round. A client
+     * adding units broadcasts them to every player; these are announced only through {@link #entityUpdate(int)},
+     * which under double-blind tells no one but their owner and those allowed to see everything. That keeps an ambush
+     * unknown to the other players until it springs. Call it no later than the Initiative Report phase of the deploy
+     * round, whose end sets up that round's deployment.
+     *
+     * @param owner       the player the units join
+     * @param entities    the units, which must not already be in the game
+     * @param deployRound the round in which they deploy
+     * @param startingPos the deployment zone they deploy into
+     */
+    public void addSecretReinforcements(Player owner, List<Entity> entities, int deployRound, int startingPos) {
+        for (Entity entity : entities) {
+            entity.setOwner(owner);
+            entity.setDeployRound(deployRound);
+            entity.setStartingPos(startingPos);
+            entity.setDeployed(false);
+            game.addEntity(entity);
+            C3Util.wireC3(game, entity);
+            owner.changeInitialEntityCount(1);
+            owner.changeInitialBV(entity.calculateBattleValue());
+        }
+
+        for (Entity entity : entities) {
+            entityUpdate(entity.getId());
+        }
+    }
+
+    /**
      * Re-hitches the trains a MUL describes, once the units in it have real ids.
      * <p>
      * A tractor read from a file carries the trailer ids the saving game used, which mean nothing here. Each one is
