@@ -99,7 +99,8 @@ dependencies {
 application {
     mainClass = 'megamek.MegaMek'
     applicationDefaultJvmArgs = [
-            '-Xmx4096m',
+            '-Xmx8192m',
+            '-Xms2g',
             '--add-opens',
             'java.base/java.util=ALL-UNNAMED',
             '--add-opens',
@@ -110,7 +111,8 @@ application {
 
 ext {
     mmJvmOptions = [
-            '-Xmx4096m',
+            '-Xmx8192m',
+            '-Xms2g',
             '--add-opens',
             'java.base/java.util=ALL-UNNAMED',
             '--add-opens',
