@@ -87,6 +87,7 @@ import megamek.common.event.entity.GameEntityChangeEvent;
 import megamek.common.event.entity.GameEntityNewEvent;
 import megamek.common.event.player.GamePlayerChatEvent;
 import megamek.common.game.Game;
+import megamek.common.game.GameTurn;
 import megamek.common.game.InitiativeRoll;
 import megamek.common.moves.MovePath;
 import megamek.common.net.packets.InvalidPacketDataException;
@@ -843,6 +844,26 @@ public abstract class BotClient extends Client {
     }
 
     /**
+     * Picks the unit to submit an empty move for when the bot has run out of retries without a path. A turn that names
+     * its unit uses that unit. An ordinary movement turn names none, because the bot chooses which of its units moves;
+     * then the game's first unit that may act in this turn is used, so that turn is answered too instead of hanging the
+     * game.
+     *
+     * @param game    the game
+     * @param moverId the unit the turn named, or {@link Entity#NONE} if it named none
+     * @param turn    the bot's current turn, which may be null
+     *
+     * @return the unit to submit an empty move for, or {@link Entity#NONE} if there is none
+     */
+    static int emptyMoveFallbackId(Game game, int moverId, @Nullable GameTurn turn) {
+        if ((moverId != Entity.NONE) && (game.getEntity(moverId) != null)) {
+            return moverId;
+        }
+        int firstEligibleId = game.getFirstEntityNum(turn);
+        return (game.getEntity(firstEligibleId) != null) ? firstEligibleId : Entity.NONE;
+    }
+
+    /**
      * Worker function for a single attempt to calculate the bot's turn.
      */
     private synchronized boolean calculateMyTurnWorker() {
@@ -875,20 +896,20 @@ public abstract class BotClient extends Client {
                     }
                 }
                 // MP can be null due to various factors in pathing.  Avoid derailing the bot if so.
+                int fallbackMoverId = lastAttempt ? emptyMoveFallbackId(game, moverId, getMyTurn()) : Entity.NONE;
                 if (mp != null) {
                     moveEntity(mp.getEntity().getId(), mp);
-                } else if (lastAttempt && (moverId != -1) && (game.getEntity(moverId) != null)) {
-                    // Out of retries with a specific unit to move and still no path. The retries recompute
-                    // deterministically, so a unit whose candidate set is empty - a cornered fighter whose
-                    // every path leaves the board is the observed live case - returns null every time, and
-                    // a bot that then submits nothing hangs the game: the server waits forever on a turn
-                    // that is never answered. Submit an empty move instead. The server applies the mandatory
-                    // movement rules itself (an aero flies its committed velocity straight ahead, off the
-                    // edge under return flyovers if it must), which is the least-bad honest outcome and,
-                    // unlike silence, always ends the turn.
+                } else if (fallbackMoverId != Entity.NONE) {
+                    // Out of retries and still no path. The retries recompute deterministically, so a unit
+                    // whose candidate set is empty - a cornered fighter whose every path leaves the board is
+                    // the observed live case - returns null every time, and a bot that then submits nothing
+                    // hangs the game: the server waits forever on a turn that is never answered. Submit an
+                    // empty move instead. The server applies the mandatory movement rules itself (an aero flies
+                    // its committed velocity straight ahead, off the edge under return flyovers if it must),
+                    // which is the least-bad honest outcome and, unlike silence, always ends the turn.
                     LOGGER.warn("No path found for entity ID {} after {} attempts; submitting an empty move "
-                          + "so the turn is not lost", moverId, BOT_TURN_RETRY_COUNT);
-                    moveEntity(moverId, new MovePath(game, game.getEntity(moverId)));
+                          + "so the turn is not lost", fallbackMoverId, BOT_TURN_RETRY_COUNT);
+                    moveEntity(fallbackMoverId, new MovePath(game, game.getEntity(fallbackMoverId)));
                 } else {
                     // This attempt to calculate the turn failed, but we don't want to log
                     // an exception here.
