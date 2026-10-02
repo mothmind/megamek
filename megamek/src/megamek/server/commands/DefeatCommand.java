@@ -35,6 +35,8 @@
 package megamek.server.commands;
 
 import megamek.common.Player;
+import megamek.common.event.GameSurrenderEvent;
+import megamek.common.game.Game;
 import megamek.server.Server;
 
 /**
@@ -79,12 +81,16 @@ public class DefeatCommand extends ServerCommand {
         }
 
         Player player = server.getPlayer(connId);
-        if (server.getGame().isForceVictory()) {
+        boolean admitted = server.getGame().isForceVictory();
+        if (admitted) {
             server.sendServerChat(getAdmitsDefeat(player.getName()));
             player.setAdmitsDefeat(true);
         } else {
             server.sendServerChat(getWantsDefeat(player.getName()));
             server.sendServerChat(connId, note);
+        }
+        if (server.getGame() instanceof Game game) {
+            game.processGameEvent(new GameSurrenderEvent(this, player.getId(), admitted));
         }
     }
 }

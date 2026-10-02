@@ -85,6 +85,10 @@ public interface GameListener extends java.util.EventListener {
     default void gamePollChange(GamePollEvent e) {
     }
 
+    /** A player declared defeat, offering to surrender or admitting defeat to a declared victory. */
+    default void gameSurrender(GameSurrenderEvent e) {
+    }
+
     void gameMapQuery(GameMapQueryEvent e);
 
     void gameEntityNew(GameEntityNewEvent e);
