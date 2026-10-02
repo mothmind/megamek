@@ -543,7 +543,8 @@ public abstract class AbstractClient implements IClient {
                     getGame().fireGameEvent(new GameToastEvent(this,
                           (GameToastEvent.Level) packet.getObject(0),
                           (String) packet.getObject(1),
-                          packet.getIntValue(2)));
+                          packet.getIntValue(2),
+                          (packet.getObject(3) instanceof Integer durationMs) ? durationMs : 0));
                     break;
                 default:
                     return false;

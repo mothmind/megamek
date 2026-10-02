@@ -578,13 +578,27 @@ public class ClientGUI extends AbstractClientGUI
      * Shows a toast notification with the given entity's sprite icon on the board view.
      *
      * <p>This is the single entry point for every toast in the client, server-raised ones included, so the player's
-     * {@link GUIPreferences#TOAST_ENABLED} setting is enforced here and nowhere else.</p>
+     * {@link GUIPreferences#TOAST_ENABLED} setting is enforced here and nowhere else. It and the overload taking a
+     * duration are one path: this one shows the toast for the player's own configured time.</p>
      *
      * @param level  the severity level determining color and default duration
      * @param text   the message text to display
      * @param entity the entity whose icon to show, or {@code null} for text-only
      */
     public void addToast(ToastLevel level, String text, @Nullable Entity entity) {
+        addToast(level, text, entity, 0);
+    }
+
+    /**
+     * Shows a toast that stays up for the given time, whatever the player's own toast duration setting says. The
+     * enabled setting still applies: a player who has switched toasts off sees none of them.
+     *
+     * @param level      the severity level determining color
+     * @param text       the message text to display
+     * @param entity     the entity whose icon to show, or {@code null} for text-only
+     * @param durationMs how long to show it in milliseconds, or 0 or less to use the player's own setting
+     */
+    public void addToast(ToastLevel level, String text, @Nullable Entity entity, int durationMs) {
         String entityLabel = (entity != null) ?
               entity.getShortName() + " [" + entity.getId() + "]" :
               "no entity";
@@ -603,7 +617,11 @@ public class ClientGUI extends AbstractClientGUI
         }
         String normalizedText = ReportToastFormatter.normalizeToastText(text);
         logger.debug("[Toast] shown [{}] ({}): {}", level, entityLabel, normalizedText);
-        toastOverlay.show(level, normalizedText, entity);
+        if (durationMs > 0) {
+            toastOverlay.show(level, normalizedText, entity, durationMs);
+        } else {
+            toastOverlay.show(level, normalizedText, entity);
+        }
     }
 
     /**
@@ -3566,7 +3584,7 @@ public class ClientGUI extends AbstractClientGUI
         @Override
         public void gameToast(GameToastEvent event) {
             Entity entity = client.getGame().getEntity(event.entityId());
-            addToast(toastLevelFor(event.level()), event.message(), entity);
+            addToast(toastLevelFor(event.level()), event.message(), entity, event.durationMs());
         }
 
         @Override

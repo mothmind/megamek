@@ -56,6 +56,23 @@ class GameToastEventTest {
     }
 
     @Test
+    @DisplayName("A toast made without a duration leaves the time to the player's own setting")
+    void noDurationByDefault() {
+        GameToastEvent event = new GameToastEvent(this, GameToastEvent.Level.INFO, "Hello", 3);
+
+        assertEquals(0, event.durationMs());
+    }
+
+    @Test
+    @DisplayName("A toast can carry its own duration")
+    void carriesItsOwnDuration() {
+        GameToastEvent event = new GameToastEvent(this, GameToastEvent.Level.INFO, "Hello", 3, 20_000);
+
+        assertEquals(20_000, event.durationMs());
+        assertEquals(3, event.entityId());
+    }
+
+    @Test
     @DisplayName("fireEvent dispatches to GameListener.gameToast with the same event")
     void fireEventDispatchesToListener() {
         GameToastEvent event = new GameToastEvent(this, GameToastEvent.Level.WARNING, "No fieldworks equipment", 7);

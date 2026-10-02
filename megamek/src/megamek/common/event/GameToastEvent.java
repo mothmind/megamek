@@ -54,6 +54,7 @@ public class GameToastEvent extends GameEvent {
     private final Level level;
     private final String message;
     private final int entityId;
+    private final int durationMs;
 
     /**
      * @param source   the event source (usually the client)
@@ -63,10 +64,24 @@ public class GameToastEvent extends GameEvent {
      *                 {@link megamek.common.units.Entity#NONE} for a text-only toast
      */
     public GameToastEvent(Object source, Level level, String message, int entityId) {
+        this(source, level, message, entityId, 0);
+    }
+
+    /**
+     * @param source     the event source (usually the client)
+     * @param level      the severity of the toast
+     * @param message    the (already localized) text to display
+     * @param entityId   the id of the acting unit whose icon should accompany the toast, or
+     *                   {@link megamek.common.units.Entity#NONE} for a text-only toast
+     * @param durationMs how long the toast stays up, in milliseconds, regardless of the player's own toast duration
+     *                   setting; 0 or less leaves it to that setting
+     */
+    public GameToastEvent(Object source, Level level, String message, int entityId, int durationMs) {
         super(source);
         this.level = level;
         this.message = message;
         this.entityId = entityId;
+        this.durationMs = durationMs;
     }
 
     public Level level() {
@@ -79,6 +94,14 @@ public class GameToastEvent extends GameEvent {
 
     public int entityId() {
         return entityId;
+    }
+
+    /**
+     * @return how long the sender wants the toast to stay up, in milliseconds, or 0 to use the player's own toast
+     *       duration setting
+     */
+    public int durationMs() {
+        return durationMs;
     }
 
     @Override
