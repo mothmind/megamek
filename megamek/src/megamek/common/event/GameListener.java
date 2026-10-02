@@ -89,6 +89,10 @@ public interface GameListener extends java.util.EventListener {
     default void gameSurrender(GameSurrenderEvent e) {
     }
 
+    /** A bot reported a unit starting to withdraw, or a withdrawing unit that may now return fire. */
+    default void gameWithdrawal(GameWithdrawalEvent e) {
+    }
+
     void gameMapQuery(GameMapQueryEvent e);
 
     void gameEntityNew(GameEntityNewEvent e);

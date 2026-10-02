@@ -332,6 +332,7 @@ public class TWGameManager extends AbstractGameManager {
     public List<ServerCommand> getCommandList(Server server) {
         List<ServerCommand> commands = new ArrayList<>();
         commands.add(new DefeatCommand(server));
+        commands.add(new WithdrawalCommand(server));
         commands.add(new ExportListCommand(server));
         commands.add(new FixElevationCommand(server, this));
         commands.add(new HelpCommand(server));

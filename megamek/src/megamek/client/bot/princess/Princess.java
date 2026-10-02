@@ -104,6 +104,7 @@ import megamek.common.weapons.AmmoWeapon;
 import megamek.common.weapons.Weapon;
 import megamek.common.weapons.attacks.StopSwarmAttack;
 import megamek.logging.MMLogger;
+import megamek.server.commands.WithdrawalCommand;
 import org.apache.logging.log4j.Level;
 
 public class Princess extends BotClient {
@@ -238,6 +239,8 @@ public class Princess extends BotClient {
     private int lastOrbitalStrikeRound = -1;
     private final Set<Integer> attackedWhileFleeing = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final Set<Integer> crippledUnits = new HashSet<>();
+    /** Units already reported to the server as withdrawing, so each is reported once even as crippledUnits refreshes. */
+    private final Set<Integer> announcedWithdrawing = new HashSet<>();
     private final ArtilleryCommandAndControl artilleryCommandAndControl = new ArtilleryCommandAndControl();
     // Track entities that fired an AMS manually this round
     private List<Integer> manualAMSIds;
@@ -3806,7 +3809,9 @@ public class Princess extends BotClient {
                               .append(mine.getDisplayName())
                               .append(").");
                         getHonorUtil().setEnemyDishonored(entity.getOwnerId());
-                        attackedWhileFleeing.add(mine.getId());
+                        if (attackedWhileFleeing.add(mine.getId())) {
+                            announceWithdrawalCourse(mine.getId(), true);
+                        }
                     }
                 }
             }
@@ -4176,8 +4181,22 @@ public class Princess extends BotClient {
         for (Entity e : getEntitiesOwned()) {
             if (e.isCrippled(true)) {
                 crippledUnits.add(e.getId());
+                if (announcedWithdrawing.add(e.getId())) {
+                    announceWithdrawalCourse(e.getId(), false);
+                }
             }
         }
+    }
+
+    /**
+     * Tells the server that a unit has started to withdraw, or that a withdrawing unit may now return fire, so
+     * listeners on the server's game (such as pilot chatter) can react. Each is reported once per unit.
+     *
+     * @param entityId      the unit that changed course
+     * @param returningFire {@code true} for return fire, {@code false} for starting to withdraw
+     */
+    void announceWithdrawalCourse(final int entityId, final boolean returningFire) {
+        sendChat(WithdrawalCommand.chatLine(entityId, returningFire));
     }
 
     private boolean isEnemyGunEmplacement(final Entity entity, final Coords coords) {
@@ -4339,6 +4358,7 @@ public class Princess extends BotClient {
             if (attackedWhileFleeing.add(ownedEntity.getId())) {
                 LOGGER.info("[ForcedWithdrawal] {} was attacked while already crippled and withdrawing; may "
                       + "return fire from now on.", ownedEntity.getDisplayName());
+                announceWithdrawalCourse(ownedEntity.getId(), true);
             }
         }
     }

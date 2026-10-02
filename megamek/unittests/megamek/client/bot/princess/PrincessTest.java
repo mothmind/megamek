@@ -46,6 +46,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -82,6 +83,7 @@ import megamek.common.options.OptionsConstants;
 import megamek.common.planetaryConditions.PlanetaryConditions;
 import megamek.common.rolls.PilotingRollData;
 import megamek.common.units.*;
+import megamek.server.commands.WithdrawalCommand;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -501,6 +503,72 @@ class PrincessTest {
         princess.updateReturnFirePermission(Set.of(withdrawingMek.getId()));
 
         assertFalse(princess.canShootWhileFallingBack(withdrawingMek));
+    }
+
+    /**
+     * A unit that turns crippled under forced withdrawal is reported to the server once, so pilot chatter can say it is
+     * pulling out; refreshing the crippled list every turn must not report it again, and healthy units never are.
+     */
+    @Test
+    void aUnitStartingToWithdrawIsAnnouncedOnce() {
+        Princess princess = spy(new Princess("TestPrincess", UUID.randomUUID().toString(), 1));
+        princess.getBehaviorSettings().setForcedWithdrawal(true);
+
+        BipedMek crippledMek = mock(BipedMek.class);
+        when(crippledMek.getId()).thenReturn(21);
+        when(crippledMek.isCrippled(true)).thenReturn(true);
+        BipedMek healthyMek = mock(BipedMek.class);
+        when(healthyMek.getId()).thenReturn(22);
+        when(healthyMek.isCrippled(true)).thenReturn(false);
+        doReturn(List.of(crippledMek, healthyMek)).when(princess).getEntitiesOwned();
+
+        princess.refreshCrippledUnits();
+        princess.refreshCrippledUnits();
+
+        verify(princess, times(1)).announceWithdrawalCourse(21, false);
+        verify(princess, never()).announceWithdrawalCourse(eq(22), anyBoolean());
+    }
+
+    @Test
+    void noWithdrawalIsAnnouncedWithoutForcedWithdrawal() {
+        Princess princess = spy(new Princess("TestPrincess", UUID.randomUUID().toString(), 1));
+        princess.getBehaviorSettings().setForcedWithdrawal(false);
+
+        BipedMek crippledMek = mock(BipedMek.class);
+        when(crippledMek.getId()).thenReturn(21);
+        when(crippledMek.isCrippled(true)).thenReturn(true);
+        doReturn(List.of(crippledMek)).when(princess).getEntitiesOwned();
+
+        princess.refreshCrippledUnits();
+
+        verify(princess, never()).announceWithdrawalCourse(anyInt(), anyBoolean());
+    }
+
+    /** Return fire is reported once, the first time a withdrawing unit earns it, however often it is shot at. */
+    @Test
+    void returnFireIsAnnouncedOnce() {
+        Princess princess = spy(new Princess("TestPrincess", UUID.randomUUID().toString(), 1));
+        princess.getBehaviorSettings().setForcedWithdrawal(true);
+
+        BipedMek withdrawingMek = mock(BipedMek.class);
+        when(withdrawingMek.getId()).thenReturn(11);
+        when(withdrawingMek.getAttackedByThisTurn()).thenReturn(Set.of(99));
+        when(withdrawingMek.getDisplayName()).thenReturn("Withdrawing Mek");
+        doReturn(List.of(withdrawingMek)).when(princess).getEntitiesOwned();
+
+        princess.updateReturnFirePermission(Set.of(withdrawingMek.getId()));
+        princess.updateReturnFirePermission(Set.of(withdrawingMek.getId()));
+
+        verify(princess, times(1)).announceWithdrawalCourse(11, true);
+    }
+
+    @Test
+    void theAnnouncementIsTheWithdrawalCommandLine() {
+        Princess princess = spy(new Princess("TestPrincess", UUID.randomUUID().toString(), 1));
+
+        princess.announceWithdrawalCourse(7, true);
+
+        verify(princess).sendChat(WithdrawalCommand.chatLine(7, true));
     }
 
     @Test
