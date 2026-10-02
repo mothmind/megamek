@@ -1049,6 +1049,17 @@ public abstract class Entity extends TurnOrdered
     private final Set<Integer> groundAttackedByThisTurn = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /**
+     * Damage this unit has taken from each attacker over the battle, by attacker id, so a kill nobody landed the last
+     * hit on can still be credited. Created on first use: a unit read back from a save made before the ledger existed
+     * has none, since deserialization skips field initializers.
+     */
+    private Map<Integer, Integer> damageTakenFrom;
+    /** For each attacker, the order of their last damaging hit on this unit; higher is more recent. */
+    private Map<Integer, Integer> lastHitOrderFrom;
+    /** How many attributed damaging hits this unit has taken, to number them in {@link #lastHitOrderFrom}. */
+    private int attributedHitsTaken;
+
+    /**
      * Determines the sort order for weapons in the UnitDisplay weapon list.
      */
     private WeaponSortOrder weaponSortOrder;
@@ -17382,6 +17393,55 @@ public abstract class Entity extends TurnOrdered
 
     public Collection<Integer> getGroundAttackedByThisTurn() {
         return new HashSet<>(groundAttackedByThisTurn);
+    }
+
+    /**
+     * Records damage this unit took from an attacker. Damage with no known attacker, or dealt by the unit to itself,
+     * is not recorded.
+     *
+     * @param attackerId the attacking unit's id, or {@link Entity#NONE}
+     * @param damage     the damage taken
+     */
+    public void recordDamageFrom(int attackerId, int damage) {
+        if ((attackerId == Entity.NONE) || (attackerId == getId()) || (damage <= 0)) {
+            return;
+        }
+        if ((damageTakenFrom == null) || (lastHitOrderFrom == null)) {
+            damageTakenFrom = new HashMap<>();
+            lastHitOrderFrom = new HashMap<>();
+        }
+        damageTakenFrom.merge(attackerId, damage, Integer::sum);
+        lastHitOrderFrom.put(attackerId, ++attributedHitsTaken);
+    }
+
+    /**
+     * @return the damage this unit has taken from each attacker over the battle, by attacker id
+     */
+    public Map<Integer, Integer> getDamageTakenFrom() {
+        return (damageTakenFrom == null) ? Map.of() : Map.copyOf(damageTakenFrom);
+    }
+
+    /**
+     * @return the attacker who did this unit the most damage over the battle, ties going to whichever of them hit it
+     *       most recently; {@link Entity#NONE} if no known attacker damaged it
+     */
+    public int getMostDamagingAttackerId() {
+        if ((damageTakenFrom == null) || (lastHitOrderFrom == null)) {
+            return Entity.NONE;
+        }
+        int best = Entity.NONE;
+        int bestDamage = 0;
+        int bestOrder = 0;
+        for (Map.Entry<Integer, Integer> entry : damageTakenFrom.entrySet()) {
+            int damage = entry.getValue();
+            int order = lastHitOrderFrom.getOrDefault(entry.getKey(), 0);
+            if ((damage > bestDamage) || ((damage == bestDamage) && (order > bestOrder))) {
+                best = entry.getKey();
+                bestDamage = damage;
+                bestOrder = order;
+            }
+        }
+        return best;
     }
 
     public WeaponSortOrder getWeaponSortOrder() {

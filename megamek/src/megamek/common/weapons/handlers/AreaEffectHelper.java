@@ -622,6 +622,23 @@ public class AreaEffectHelper {
             vPhaseReport.add(report);
         }
 
+        // Artillery hits do not name their attacker, so credit the firing unit in the damage ledger directly.
+        int previousAttribution = gameManager.startDamageAttribution((killer == null) ? Entity.NONE : killer.getId());
+        try {
+            applyArtilleryHits(entity, hits, cluster, toHit, specialCaseFlechette, isFuelAirBomb, killer, vPhaseReport,
+                  gameManager);
+        } finally {
+            gameManager.restoreDamageAttribution(previousAttribution);
+        }
+        if (killer != null) {
+            gameManager.creditKill(entity, killer);
+        }
+    }
+
+    private static void applyArtilleryHits(Entity entity, int hits, int cluster, ToHitData toHit,
+          boolean specialCaseFlechette, boolean isFuelAirBomb, Entity killer, Vector<Report> vPhaseReport,
+          TWGameManager gameManager) {
+        Report report;
         if (entity instanceof BattleArmor) {
             // BA take full damage to each trooper, ouch!
             for (int loc = 0; loc < entity.locations(); loc++) {
@@ -660,9 +677,6 @@ public class AreaEffectHelper {
                       false));
                 hits -= Math.min(cluster, hits);
             }
-        }
-        if (killer != null) {
-            gameManager.creditKill(entity, killer);
         }
     }
 

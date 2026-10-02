@@ -30099,12 +30099,68 @@ public class TWGameManager extends AbstractGameManager {
     }
 
     /**
-     * Resolve a Physical Attack
+     * Runs an action with any damage whose hits do not name an attacker credited to the given unit in the damage
+     * ledger (see {@link Entity#recordDamageFrom}), restoring the previous attribution afterwards. Physical attacks
+     * and artillery use it, since their hits do not carry the attacker.
+     *
+     * @param attackerId the unit to credit, or {@link Entity#NONE}
+     * @param action     the attack resolution to run
+     */
+    public void attributeDamageTo(int attackerId, Runnable action) {
+        int previous = startDamageAttribution(attackerId);
+        try {
+            action.run();
+        } finally {
+            restoreDamageAttribution(previous);
+        }
+    }
+
+    /**
+     * Starts crediting damage from hits that do not name an attacker to the given unit, for code that cannot pass a
+     * {@link Runnable} to {@link #attributeDamageTo}. Pair it with {@link #restoreDamageAttribution} in a
+     * {@code finally} block.
+     *
+     * @param attackerId the unit to credit, or {@link Entity#NONE}
+     *
+     * @return the attribution in force before, to hand back to {@link #restoreDamageAttribution}
+     */
+    public int startDamageAttribution(int attackerId) {
+        int previous = damager.getAttributedAttackerId();
+        damager.setAttributedAttackerId(attackerId);
+        return previous;
+    }
+
+    /**
+     * @param previous the attribution {@link #startDamageAttribution} returned
+     */
+    public void restoreDamageAttribution(int previous) {
+        damager.setAttributedAttackerId(previous);
+    }
+
+    /**
+     * Resolve a Physical Attack, crediting the damage it does to its attacker in the damage ledger.
      *
      * @param pr  The <code>PhysicalResult</code> of the physical attack
      * @param cen The <code>int</code> Entity ID of the entity whose physical attack was last resolved
      */
     private void resolvePhysicalAttack(PhysicalResult pr, int cen) {
+        // Set inline rather than through attributeDamageTo, and only with a damage manager to set it on, so a test
+        // that runs this on a partial mock still resolves the attack.
+        TWDamageManager ledger = damager;
+        int previous = (ledger == null) ? Entity.NONE : ledger.getAttributedAttackerId();
+        if (ledger != null) {
+            ledger.setAttributedAttackerId(pr.aaa.getEntityId());
+        }
+        try {
+            resolvePhysicalAttackAction(pr, cen);
+        } finally {
+            if (ledger != null) {
+                ledger.setAttributedAttackerId(previous);
+            }
+        }
+    }
+
+    private void resolvePhysicalAttackAction(PhysicalResult pr, int cen) {
         AbstractAttackAction aaa = pr.aaa;
         switch (aaa) {
             case PunchAttackAction paa -> {

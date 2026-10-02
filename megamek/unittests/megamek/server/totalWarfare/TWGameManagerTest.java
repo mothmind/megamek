@@ -626,6 +626,35 @@ class TWGameManagerTest {
             assertEquals(4000, reports.getFirst().messageId, "First report should be physical phase header");
         }
 
+        /**
+         * Punch hits do not name their attacker, so the physical phase credits the damage to the attacker itself; a
+         * kill with no last hit can then still go to whoever did the most damage.
+         */
+        @Test
+        void kickDamageIsCreditedToTheKickerInTheDamageLedger() throws ReflectiveOperationException {
+            // A kick already rolled as a hit, the way DropKickGuruLandingTest queues its death from above.
+            megamek.common.PhysicalResult kick = new megamek.common.PhysicalResult();
+            kick.aaa = new megamek.common.actions.KickAttackAction(attacker.getId(), target.getTargetType(),
+                  target.getId(), megamek.common.actions.KickAttackAction.LEFT);
+            kick.toHit = new megamek.common.ToHitData(2, "test");
+            megamek.common.rolls.Roll roll = org.mockito.Mockito.mock(megamek.common.rolls.Roll.class);
+            org.mockito.Mockito.lenient().when(roll.getIntValue()).thenReturn(12);
+            org.mockito.Mockito.lenient().when(roll.getReport()).thenReturn("12");
+            kick.roll = roll;
+            kick.damage = 10;
+            java.lang.reflect.Field physicalResults = TWGameManager.class.getDeclaredField("physicalResults");
+            physicalResults.setAccessible(true);
+            physicalResults.set(gameManager, new Vector<>(java.util.List.of(kick)));
+            int before = target.getTotalArmor() + target.getTotalInternal();
+
+            gameManager.resolvePhysicalAttacks();
+
+            assertTrue(target.getTotalArmor() + target.getTotalInternal() < before, "the kick must have landed");
+            assertEquals(java.util.Map.of(attacker.getId(), 10), target.getDamageTakenFrom(),
+                  "the kick's damage is the kicker's, though the hit itself does not name them");
+            assertEquals(attacker.getId(), target.getMostDamagingAttackerId());
+        }
+
         @Test
         void testSinglePunchAttack_ProcessedSuccessfully() {
             // Arrange

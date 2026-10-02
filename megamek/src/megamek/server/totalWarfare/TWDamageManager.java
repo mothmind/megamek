@@ -78,6 +78,7 @@ public class TWDamageManager implements IDamageManager {
     protected TWGameManager manager = null;
     protected Game game = null;
     protected boolean initialized = false;
+    private int attributedAttackerId = Entity.NONE;
 
     public TWDamageManager() {}
 
@@ -112,6 +113,24 @@ public class TWDamageManager implements IDamageManager {
     public void setManager(TWGameManager manager) {
         this.manager = manager;
         initialized = (game != null);
+    }
+
+    /**
+     * @return the unit damage is credited to when a hit does not name its attacker, or {@link Entity#NONE}
+     */
+    public int getAttributedAttackerId() {
+        return attributedAttackerId;
+    }
+
+    /**
+     * Credits damage from hits that do not name their attacker - physical attacks, artillery - to this unit, for the
+     * damage ledger only (see {@link Entity#recordDamageFrom}). The hit itself is left alone, since other rules read
+     * its attacker.
+     *
+     * @param attackerId the unit to credit, or {@link Entity#NONE} for none
+     */
+    public void setAttributedAttackerId(int attackerId) {
+        this.attributedAttackerId = attackerId;
     }
 
     /**
@@ -247,6 +266,10 @@ public class TWDamageManager implements IDamageManager {
                   nukeS2S);
             return reportVec;
         }
+
+        // Record who did this damage, so a kill nobody landed the last hit on can still be credited.
+        entity.recordDamageFrom((hit.getAttackerId() != Entity.NONE) ? hit.getAttackerId() : attributedAttackerId,
+              damage);
 
         // show Locations which have rerolled with Edge
         HitData undoneLocation = hit.getUndoneLocation();
