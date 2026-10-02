@@ -33,6 +33,7 @@
 package megamek.common.compute.scatter;
 
 import megamek.common.board.Coords;
+import megamek.common.compute.Compute;
 import megamek.common.game.Game;
 import megamek.common.options.OptionsConstants;
 
@@ -53,6 +54,11 @@ public enum ScatterMethod {
         public ScatterResult frontArc(Coords target, int facing, int marginOfFailure, int reduction) {
             return Scatter.frontArc(target, facing, Scatter.reducedDistance(marginOfFailure, reduction));
         }
+
+        @Override
+        public ScatterResult directFire(Coords target, int reduction) {
+            return Scatter.omnidirectional(target, Scatter.applyReduction(Compute.d6(1), reduction));
+        }
     },
 
     /** Advanced Scatter (TO:AR): two-leg, dice-based scatter that can reach any hex. */
@@ -66,7 +72,24 @@ public enum ScatterMethod {
         public ScatterResult frontArc(Coords target, int facing, int marginOfFailure, int reduction) {
             return Scatter.advancedAltitude(target, facing, marginOfFailure, reduction);
         }
+
+        @Override
+        public ScatterResult directFire(Coords target, int reduction) {
+            return Scatter.advancedWithDice(target, Scatter.DIRECT_FIRE_DICE, reduction);
+        }
     };
+
+    /**
+     * Scatters a missed direct-fire artillery attack. Direct fire rolls only 1d6 for its scatter distance and never
+     * applies the margin of failure (TO:AR p.153); under Advanced Scatter each leg is a single die, so the shot still
+     * lands no more than six hexes out.
+     *
+     * @param target    the intended target hex
+     * @param reduction hexes to subtract from the scatter distance (e.g. Oblique Artilleryman); {@code 0} for none
+     *
+     * @return the scatter outcome
+     */
+    public abstract ScatterResult directFire(Coords target, int reduction);
 
     /**
      * Scatters in any of the six directions using a caller-supplied standard scatter distance, for weapons whose

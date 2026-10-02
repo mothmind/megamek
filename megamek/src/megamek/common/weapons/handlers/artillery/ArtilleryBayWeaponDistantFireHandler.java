@@ -405,12 +405,13 @@ public class ArtilleryBayWeaponDistantFireHandler extends AmmoBayWeaponHandler {
                   new SpecialHexDisplay(SpecialHexDisplay.Type.ARTILLERY_HIT,
                         game.getRoundCount(), game.getPlayer(aaa.getPlayerId()), artyMsg));
         } else {
-            // Oblique Artilleryman reduces scatter distance by two hexes (CamOps p.78, 5th printing), but a drift
-            // reduced to nothing lands one hex out half the time - Dead Reckoning house rule, so the ability can
-            // never guarantee a direct hit.
-            int scatterReduction = attackingEntity.hasAbility(OptionsConstants.GUNNERY_OBLIQUE_ARTILLERY)
-                  ? Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP : 0;
+            // Direct fire, made in the weapon attack phase, rolls only 1d6 for the scatter distance whatever the
+            // margin (TO:AR p.153). Oblique Artilleryman reduces scatter distance by two hexes, minimum 0 (CamOps
+            // p.78, 5th printing).
             ScatterMethod scatterMethod = ScatterMethod.forGame(game);
+            boolean directFire = game.getPhase().isFiring();
+            int scatterReduction = attackingEntity.hasAbility(OptionsConstants.GUNNERY_OBLIQUE_ARTILLERY)
+                  ? Scatter.SPA_SCATTER_REDUCTION : 0;
             // We're only going to display one missed shot hex on the board, at the intended
             // target
             // Any drifted shots will be indicated at their end points
@@ -422,7 +423,9 @@ public class ArtilleryBayWeaponDistantFireHandler extends AmmoBayWeaponHandler {
             game.getBoard().addSpecialHexDisplay(originalPosition, bayMissMarker);
             while (numWeaponsHit > 0) {
                 // We'll generate a new report and scatter for each weapon fired
-                targetPos = scatterMethod.omnidirectional(originalPosition, toHit.getMoS(), scatterReduction).landing();
+                targetPos = (directFire ?
+                      scatterMethod.directFire(originalPosition, scatterReduction) :
+                      scatterMethod.omnidirectional(originalPosition, toHit.getMoS(), scatterReduction)).landing();
                 if (game.getBoard().contains(targetPos)) {
                     targets.add(targetPos);
                     // The bay scatters each weapon separately; draw the drift line to the first on-board impact that

@@ -178,30 +178,34 @@ class ScatterTest {
     }
 
     @Test
-    @DisplayName("the coin-flip reduction subtracts two hexes exactly as the flat reduction does on a wide miss")
-    void coinFlipReductionMatchesFlatReductionOnAWideMiss() {
-        assertEquals(1, Scatter.reducedDistance(3, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
-        assertEquals(1, Scatter.reducedDistance(-3, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
-        assertEquals(8, Scatter.reducedDistance(-10, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP));
+    @DisplayName("direct-fire scatter rolls 1d6 for its distance in a straight line under standard scatter")
+    void standardDirectFireRollsOneDie() {
+        Coords target = new Coords(6, 9);
+        boolean[] seen = new boolean[7];
+        for (int trial = 0; trial < 600; trial++) {
+            ScatterResult result = ScatterMethod.STANDARD.directFire(target, 0);
+            int distance = result.distanceHexes();
+            assertTrue((distance >= 1) && (distance <= 6), "direct fire must drift 1-6 hexes, got " + distance);
+            assertTrue(isOnStraightLine(target, result.landing()), "standard scatter keeps to a straight line");
+            seen[distance] = true;
+        }
+        for (int distance = 1; distance <= 6; distance++) {
+            assertTrue(seen[distance], "every distance from 1 to 6 must come up, missing " + distance);
+        }
     }
 
     @Test
-    @DisplayName("a drift the coin-flip reduction would cancel lands one hex out roughly half the time")
-    void coinFlipReductionSometimesKeepsAOneHexDrift() {
+    @DisplayName("direct-fire scatter under Advanced Scatter uses one die per leg, so it never lands past six hexes")
+    void advancedDirectFireStaysWithinSix() {
         Coords target = new Coords(6, 9);
-        for (int marginOfFailure : new int[] { -1, -2 }) {
-            int drifted = 0;
-            for (int trial = 0; trial < 2000; trial++) {
-                int distance = ScatterMethod.STANDARD
-                      .omnidirectional(target, marginOfFailure, Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP)
-                      .distanceHexes();
-                assertTrue((distance == 0) || (distance == 1),
-                      "a cancelled drift must land on the target hex or one hex out, got " + distance);
-                drifted += distance;
-            }
-            assertTrue((drifted > 800) && (drifted < 1200),
-                  "missing by " + -marginOfFailure + " must drift roughly half the time, got " + drifted + "/2000");
+        boolean reachedOffSpineHex = false;
+        for (int trial = 0; trial < 600; trial++) {
+            ScatterResult result = ScatterMethod.ADVANCED.directFire(target, 0);
+            int distance = result.distanceHexes();
+            assertTrue((distance >= 1) && (distance <= 6), "direct fire must stay within 6 hexes, got " + distance);
+            reachedOffSpineHex |= !isOnStraightLine(target, result.landing());
         }
+        assertTrue(reachedOffSpineHex, "advanced direct-fire scatter must still reach hexes off the spines");
     }
 
     /** @return whether {@code hex} lies on one of the six straight-line directions from {@code target} */

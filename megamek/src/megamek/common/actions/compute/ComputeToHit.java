@@ -591,8 +591,7 @@ public class ComputeToHit {
                       Messages.getString("WeaponAttackAction.GunBSkill"));
             }
         }
-        if (weaponType.hasFlag(WeaponType.F_ARTILLERY) &&
-              game.getOptions().booleanOption(OptionsConstants.RPG_ARTILLERY_SKILL)) {
+        if (usesArtillerySkill(game, weaponType, isArtilleryDirect)) {
             gamemasterModifier = ae.getCrew().appliedArtilleryModifier();
             toHit = new ToHitData(ae.getCrew().getArtillery() - gamemasterModifier,
                   Messages.getString("WeaponAttackAction.ArtySkill"));
@@ -1716,6 +1715,22 @@ public class ComputeToHit {
         }
 
         return toHit;
+    }
+
+    /**
+     * Whether an attack rolls against the crew's Artillery skill instead of Gunnery. With the optional Artillery skill
+     * in play, indirect artillery attacks use it; direct-fire artillery, flak included, uses Gunnery like any other
+     * weapon attack (TO:AR p.153).
+     *
+     * @param game              the game, for the Artillery skill option
+     * @param weaponType        the weapon being fired
+     * @param isArtilleryDirect whether this is a direct-fire artillery attack, made in the weapon attack phase
+     *
+     * @return {@code true} if the Artillery skill is the base to-hit number
+     */
+    static boolean usesArtillerySkill(Game game, WeaponType weaponType, boolean isArtilleryDirect) {
+        return weaponType.hasFlag(WeaponType.F_ARTILLERY) && !isArtilleryDirect
+              && game.getOptions().booleanOption(OptionsConstants.RPG_ARTILLERY_SKILL);
     }
 
     /**

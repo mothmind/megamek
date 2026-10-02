@@ -609,15 +609,17 @@ public class ArtilleryWeaponDistantFireHandler extends AmmoWeaponHandler {
         } else {
             // Standard scatter rolls 1d6 for the direction and uses the margin of failure as the
             // distance; with the Advanced Scatter option the distance is rolled with dice instead.
-            // Resolved here so it is not duplicated in ArtilleryWeaponDirectFireHandler.
+            // Direct fire, made in the weapon attack phase, rolls only 1d6 for the distance whatever the
+            // margin (TO:AR p.153). Resolved here so the direct-fire subclasses share it.
             Coords originalPosition = targetPos;
-            // Oblique Artilleryman reduces scatter distance by two hexes (CamOps p.78, 5th printing), but a drift
-            // reduced to nothing lands one hex out half the time - Dead Reckoning house rule, so the ability can
-            // never guarantee a direct hit.
+            ScatterMethod scatterMethod = ScatterMethod.forGame(game);
+            boolean directFire = game.getPhase().isFiring();
+            // Oblique Artilleryman reduces scatter distance by two hexes, minimum 0 (CamOps p.78, 5th printing).
             int scatterReduction = attackingEntity.hasAbility(OptionsConstants.GUNNERY_OBLIQUE_ARTILLERY)
-                  ? Scatter.SPA_SCATTER_REDUCTION_COIN_FLIP : 0;
-            ScatterResult scatterResult = ScatterMethod.forGame(game)
-                  .omnidirectional(targetPos, toHit.getMoS(), scatterReduction);
+                  ? Scatter.SPA_SCATTER_REDUCTION : 0;
+            ScatterResult scatterResult = directFire ?
+                  scatterMethod.directFire(targetPos, scatterReduction) :
+                  scatterMethod.omnidirectional(targetPos, toHit.getMoS(), scatterReduction);
             targetPos = scatterResult.landing();
             if (game.getBoard().contains(targetPos)) {
                 // A shot can miss and still come to rest on the hex it was aimed at, when the drift is shortened
