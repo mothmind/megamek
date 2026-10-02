@@ -1266,6 +1266,22 @@ public class MovementDisplay extends ActionPhaseDisplay {
         updateMove(true);
     }
 
+    /**
+     * @return whether the path's last step faces a rise or drop that only climbing could manage, judged from where that
+     *       step started; a step blocked by anything else is not a failed climb
+     */
+    private boolean lastStepNeedsClimbing(Entity entity) {
+        MoveStep previous = cmd.getSecondLastStep();
+        Coords from = (previous == null) ? entity.getPosition() : previous.getPosition();
+        int fromElevation = (previous == null) ? entity.getElevation() : previous.getElevation();
+        Coords to = cmd.getLastStep().getPosition();
+        if ((from == null) || (to == null)) {
+            return false;
+        }
+        Board board = game.getBoard(entity);
+        return ClimbingHelper.stepNeedsClimbing(board.getHex(from), fromElevation, board.getHex(to));
+    }
+
     private void updateMove(boolean redrawMovement) {
         Entity currentEntity = currentEntity();
         if (redrawMovement &&
@@ -1283,7 +1299,8 @@ public class MovementDisplay extends ActionPhaseDisplay {
             && (cmd.getLastStep().getMovementType(true) == EntityMovementType.MOVE_ILLEGAL)
             && cmd.getLastStep().climbMode()
             && !ClimbingHelper.canClimb(currentEntity)
-            && game.getOptions().booleanOption(OptionsConstants.ADVANCED_GROUND_MOVEMENT_TAC_OPS_CLIMBING)) {
+            && game.getOptions().booleanOption(OptionsConstants.ADVANCED_GROUND_MOVEMENT_TAC_OPS_CLIMBING)
+            && lastStepNeedsClimbing(currentEntity)) {
             String reason = ClimbingHelper.getClimbingImpossibleReason(currentEntity);
             // updateMove() runs on every step add/redraw while plotting, so a modal
             // JOptionPane here would re-fire and block UI on every keypress. Use a

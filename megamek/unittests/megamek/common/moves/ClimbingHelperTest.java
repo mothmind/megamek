@@ -731,4 +731,54 @@ class ClimbingHelperTest {
                   "Dry hex → dry hex: drop is just absolute altitude difference.");
         }
     }
+
+    @Nested
+    @DisplayName("stepNeedsClimbing - is a blocked step a failed climb?")
+    class StepNeedsClimbing {
+
+        @Test
+        @DisplayName("a rise of three or more levels needs climbing")
+        void riseOfThree() {
+            assertTrue(ClimbingHelper.stepNeedsClimbing(new Hex(0, "", ""), 0, new Hex(3, "", "")));
+        }
+
+        @Test
+        @DisplayName("a rise of two is an ordinary step, so a block there is not about climbing")
+        void riseOfTwo() {
+            assertFalse(ClimbingHelper.stepNeedsClimbing(new Hex(0, "", ""), 0, new Hex(2, "", "")));
+        }
+
+        @Test
+        @DisplayName("level ground never needs climbing, whatever else blocks the step")
+        void levelGround() {
+            assertFalse(ClimbingHelper.stepNeedsClimbing(new Hex(1, "", ""), 0, new Hex(1, "", "")));
+        }
+
+        @Test
+        @DisplayName("a drop of three or more levels needs climbing down")
+        void dropOfThree() {
+            assertTrue(ClimbingHelper.stepNeedsClimbing(new Hex(4, "", ""), 0, new Hex(1, "", "")));
+        }
+
+        @Test
+        @DisplayName("a building counts its height: walking up to a tall one needs climbing")
+        void buildingHeightCounts() {
+            assertTrue(ClimbingHelper.stepNeedsClimbing(new Hex(0, "", ""), 0,
+                  new Hex(0, "bldg_elev:3;building:2:80;bldg_cf:80", "")));
+        }
+
+        @Test
+        @DisplayName("the unit's own elevation counts: on a roof beside a tall building there is no climb")
+        void startingElevationCounts() {
+            assertFalse(ClimbingHelper.stepNeedsClimbing(new Hex(0, "", ""), 2,
+                  new Hex(0, "bldg_elev:3;building:2:80;bldg_cf:80", "")));
+        }
+
+        @Test
+        @DisplayName("a missing hex, such as off the board, is not a climb")
+        void missingHex() {
+            assertFalse(ClimbingHelper.stepNeedsClimbing(null, 0, new Hex(5, "", "")));
+            assertFalse(ClimbingHelper.stepNeedsClimbing(new Hex(0, "", ""), 0, null));
+        }
+    }
 }

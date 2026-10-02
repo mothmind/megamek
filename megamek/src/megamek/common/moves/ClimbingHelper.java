@@ -34,6 +34,7 @@ package megamek.common.moves;
 
 import megamek.common.Hex;
 import megamek.common.Messages;
+import megamek.common.annotations.Nullable;
 import megamek.common.board.Coords;
 import megamek.common.equipment.MiscMounted;
 import megamek.common.game.Game;
@@ -128,6 +129,29 @@ public final class ClimbingHelper {
      */
     public static boolean isAtEdge(Entity entity, Coords targetCoords, Game game) {
         return getEdgeDropHeight(entity, targetCoords, game) >= MIN_CLIMBING_LEVELS;
+    }
+
+    /**
+     * Returns true if a step from one hex into the next would take climbing: a rise or drop of at least
+     * {@link #MIN_CLIMBING_LEVELS} between the unit's altitude and the top of the destination, where a building counts
+     * its height. A step that is illegal for any other reason has nothing to do with climbing.
+     *
+     * @param from          the hex the step starts in
+     * @param fromElevation the unit's elevation above that hex
+     * @param to            the hex the step goes into
+     *
+     * @return true if the step would need climbing; false if either hex is missing
+     */
+    public static boolean stepNeedsClimbing(@Nullable Hex from, int fromElevation, @Nullable Hex to) {
+        if ((from == null) || (to == null)) {
+            return false;
+        }
+        int fromAltitude = from.getLevel() + fromElevation;
+        int toTop = to.getLevel();
+        if (to.containsTerrain(Terrains.BUILDING)) {
+            toTop += to.terrainLevel(Terrains.BLDG_ELEV);
+        }
+        return Math.abs(toTop - fromAltitude) >= MIN_CLIMBING_LEVELS;
     }
 
     /**
