@@ -42,6 +42,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import javax.imageio.ImageIO;
 
 import megamek.client.ui.tileset.HexTileset;
@@ -106,7 +108,7 @@ public class CreateImageAtlases {
             }
             processDirectory(file);
 
-            File[] files = file.listFiles();
+            File[] files = byName(file.listFiles());
 
             if (files != null) {
                 for (File subFile : files) {
@@ -119,6 +121,22 @@ public class CreateImageAtlases {
     }
 
     /**
+     * Sorts a directory listing by file name. {@link File#listFiles()} returns files in no particular order - on Linux,
+     * whatever order the build's file copy left them in - so packing in listing order reshuffled every atlas and the
+     * atlas map on every build. Names are compared as plain strings, so every platform packs the same way.
+     *
+     * @param files a directory listing, which may be {@code null}
+     *
+     * @return the same listing sorted by name, or {@code null} if it was {@code null}
+     */
+    static File[] byName(File[] files) {
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparing(File::getName));
+        }
+        return files;
+    }
+
+    /**
      * Find all the image files in the given directory and generate an atlas large enough to hold them, then iterate
      * through each image and draw it into the atlas. The atlas is then saved as "atlas-dirname.png".
      *
@@ -126,11 +144,11 @@ public class CreateImageAtlases {
     void processDirectory(File dir) {
         logger.info("Processing: {}", dir);
 
-        File[] imageFiles = dir.listFiles((dir1, name) -> ((name.toLowerCase().endsWith(".png") ||
+        File[] imageFiles = byName(dir.listFiles((dir1, name) -> ((name.toLowerCase().endsWith(".png") ||
               name.toLowerCase().endsWith(".gif") ||
               name.toLowerCase().endsWith(".jpg") ||
               name.toLowerCase().endsWith(".jpeg"))
-              && !name.endsWith("_atlas.png")));
+              && !name.endsWith("_atlas.png"))));
 
         int numRows = 0;
 
