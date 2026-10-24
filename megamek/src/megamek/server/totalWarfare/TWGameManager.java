@@ -47,13 +47,13 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import jakarta.annotation.Nullable;
 import megamek.client.bot.AIType;
 import megamek.client.bot.princess.BehaviorSettings;
 import megamek.client.ui.Messages;
 import megamek.client.ui.clientGUI.tooltip.UnitToolTip;
 import megamek.common.*;
 import megamek.common.actions.*;
-import megamek.common.annotations.Nullable;
 import megamek.common.battleArmor.BattleArmor;
 import megamek.common.bays.Bay;
 import megamek.common.board.Board;
@@ -87,6 +87,7 @@ import megamek.common.event.GameToastEvent;
 import megamek.common.exceptions.LocationFullException;
 import megamek.common.force.Force;
 import megamek.common.force.Forces;
+import megamek.common.game.BotHonorReport;
 import megamek.common.game.Game;
 import megamek.common.game.GameDatasetLogger;
 import megamek.common.game.GameTurn;
@@ -115,6 +116,7 @@ import megamek.common.rolls.PilotingRollData;
 import megamek.common.rolls.Roll;
 import megamek.common.rolls.TargetRoll;
 import megamek.common.rules.RulesPSR;
+import megamek.common.rules.core.CoreRulesManager;
 import megamek.common.rules.totalwarfare.TWRulesUnderwater;
 import megamek.common.turns.CounterGrappleTurn;
 import megamek.common.turns.PrephaseTurn;
@@ -277,6 +279,7 @@ public class TWGameManager extends AbstractGameManager {
     private BuildingEditHandler buildingEditHandler;
     private final InfantryActionTracker infantryActionTracker = new InfantryActionTracker();
     private final BuildingCollapseHandler buildingCollapseHandler = new BuildingCollapseHandler(this);
+    private final AirborneVehicleCrashHandler airborneVehicleCrashHandler = new AirborneVehicleCrashHandler(this);
     private final DeploymentProcessor deploymentProcessor = new DeploymentProcessor(this);
     final HeatResolver heatResolver = new HeatResolver(this);
     private final MinefieldManager minefieldManager = new MinefieldManager(this);
@@ -293,6 +296,7 @@ public class TWGameManager extends AbstractGameManager {
         EquipmentType.initializeTypes();
         game.getOptions().initialize();
         game.getOptions().loadOptions();
+        initializeRules();
 
         game.setPhase(GamePhase.LOUNGE);
         MapSettings mapSettings = game.getMapSettings();
@@ -315,6 +319,19 @@ public class TWGameManager extends AbstractGameManager {
     public TWGameManager(@Nullable TWDamageManager damageManager) {
         this();
         setDamageManager(damageManager);
+    }
+
+    private void initializeRules() {
+        IOption rules_system = null;
+        rules_system = game.getOptions().getOption(OptionsConstants.RULES_SYSTEM);
+
+        String loadedOption = (game.rulesManager instanceof CoreRulesManager) ?
+                              OptionsConstants.RULES_CORE : OptionsConstants.RULES_TW;
+        if (rules_system == null) {
+            game.initializeRulesManager(OptionsConstants.RULES_CORE);
+        } else if (!rules_system.stringValue().equals(loadedOption)) {
+            game.initializeRulesManager(rules_system.stringValue());
+        }
     }
 
     public void setDamageManager(TWDamageManager damageManager) {
@@ -360,10 +377,12 @@ public class TWGameManager extends AbstractGameManager {
         commands.add(new CheckBVTeamCommand(server));
         commands.add(new NukeCommand(server, this));
         commands.add(new KillCommand(server, this));
+        commands.add(new ExplodeEquipmentCommand(server, this));
         commands.add(new OrbitalBombardmentCommand(server, this));
         commands.add(new OrbitalStrikeCommand(server, this));
         commands.add(new ChangeOwnershipCommand(server, this));
         commands.add(new SkillModifierCommand(server, this));
+        commands.add(new TargetModifierCommand(server, this));
         commands.add(new DisasterCommand(server, this));
         commands.add(new FirestarterCommand(server, this));
         commands.add(new ChangeTerrainCommand(server, this));
@@ -374,6 +393,9 @@ public class TWGameManager extends AbstractGameManager {
         commands.add(new FirestormCommand(server, this));
         commands.add(new RemoveSmokeCommand(server, this));
         commands.add(new RescueCommand(server, this));
+        commands.add(new ForcedWithdrawalOrderCommand(server, this));
+        commands.add(new UnitOrderCommand(server, this));
+        commands.add(new RadioCommand(server, this));
         commands.add(new ChangeWeatherCommand(server, this));
         commands.add(new TraitorCommand(server, this));
         commands.add(new ListEntitiesCommand(server, this));
@@ -417,6 +439,29 @@ public class TWGameManager extends AbstractGameManager {
             hexEditHandler = new HexEditHandler(this);
         }
         return hexEditHandler;
+    }
+
+    /**
+     * Sets off one piece of a unit's equipment at a gamemaster's request, as a critical hit would; the
+     * {@code /explode} command's entry point. See {@link EquipmentExplosionHandler}.
+     *
+     * @param entity  the unit carrying the equipment
+     * @param mounted the equipment to set off
+     *
+     * @return what happened, for the gamemaster to be told
+     */
+    public EquipmentExplosionHandler.Outcome explodeEquipmentForGamemaster(Entity entity, Mounted<?> mounted) {
+        return new EquipmentExplosionHandler(this).explode(entity, mounted);
+    }
+
+    /**
+     * Keeps the turn order sound after a gamemaster act took a unit out of action mid-phase; see
+     * {@link GamemasterTurnUpkeep}.
+     *
+     * @param entity the unit the gamemaster acted on
+     */
+    public void settleTurnsAfterGamemasterAct(Entity entity) {
+        new GamemasterTurnUpkeep(this).settleTurnsAfter(entity);
     }
 
     /**
@@ -1089,11 +1134,11 @@ public class TWGameManager extends AbstractGameManager {
                     }
                     break;
                 case PRINCESS_DISHONORED:
-                    // Only bots report dishonor, and only a list of player IDs is worth relaying; anything else is a
+                    // Only bots report dishonor, and only an honor report is worth relaying; anything else is a
                     // client sending a packet it has no business sending, so drop it rather than pass it on.
-                    if ((player != null) && player.isBot() && (packet.getObject(0) instanceof List<?>)) {
-                        // Relay this bot's dishonored-players list to all clients, tagged with the bot's player ID, so
-                        // clients can warn a human before an action that would newly dishonor them.
+                    if ((player != null) && player.isBot() && (packet.getObject(0) instanceof BotHonorReport)) {
+                        // Relay this bot's honor report to all clients, tagged with the bot's player ID, so clients
+                        // can tag its withdrawing units and warn a human before an action that would dishonor them.
                         send(new Packet(PacketCommand.PRINCESS_DISHONORED, player.getId(), packet.getObject(0)));
                     }
                     break;
@@ -1217,6 +1262,18 @@ public class TWGameManager extends AbstractGameManager {
                     break;
                 case ENTITY_DEPLOY_BRIDGE:
                     receiveDeployBridge(packet, connectionId);
+                    break;
+                case ENTITY_SCAN_ORDER:
+                    new ObjectiveScanHandler(this).receiveScanOrder(packet.data()[0], connectionId);
+                    break;
+                case OBJECTIVE_EDIT:
+                    new ObjectivePlacementHandler(this).receiveObjectiveEdit(packet, connectionId);
+                    break;
+                case SCAN_DESIGNATION:
+                    new ObjectiveScanHandler(this).receiveScanDesignation(packet, connectionId);
+                    break;
+                case ENTITY_SCAN_WITHDRAW:
+                    new ObjectiveScanHandler(this).receiveScanWithdraw(packet, connectionId);
                     break;
                 case INFANTRY_ACTION_DECLARATION:
                     receiveInfantryActionDeclaration(packet, connectionId);
@@ -1695,6 +1752,8 @@ public class TWGameManager extends AbstractGameManager {
         }
         addReport(report);
 
+        new ObjectiveScanHandler(this).reportTheScanRecord();
+
         bvReports(false);
 
         // List the survivors
@@ -1870,6 +1929,7 @@ public class TWGameManager extends AbstractGameManager {
             determineTurnOrder(GamePhase.INITIATIVE);
             clearReports();
             writeInitiativeReport(true);
+            sendTeamInitiative();
             sendReport(true);
             return; // don't end the phase yet, players need to see new report
         }
@@ -2936,6 +2996,15 @@ public class TWGameManager extends AbstractGameManager {
         transmitAllPlayerUpdates();
     }
 
+    /**
+     * Sends every team's initiative roll to all clients, keyed by player id. A player update only carries the
+     * player's roll for ordering within their team; the team roll that decides who wins initiative is not in it. Bots
+     * need the team roll to judge whether a Tactical Genius reroll is worth spending.
+     */
+    void sendTeamInitiative() {
+        send(packetHelper.createTeamInitiativePacket());
+    }
+
     private Vector<GameTurn> initGameTurnsWithStranded(TurnVectors team_order) {
         Vector<GameTurn> turns = new Vector<>(team_order.getTotalTurns() + team_order.getEvenTurns());
 
@@ -3012,7 +3081,13 @@ public class TWGameManager extends AbstractGameManager {
         // add the turns (this is easy)
         while (team_order.hasMoreElements()) {
             Entity entity = (Entity) team_order.nextElement();
-            if (entity.isSelectableThisTurn()) {
+            if (phase.isDeployment()) {
+                if (Game.rulesManager.getRulesGame().canWalkOnThisRound(entity)) {
+                    continue;
+                }
+            }
+
+            if (entity.isSelectableThisTurn() && Game.rulesManager.getRulesGame().eligibleForPhase(entity, phase)) {
                 if (!protoMeksMoveMulti && (entity instanceof ProtoMek) && (entity.getUnitNumber() != Entity.NONE)) {
                     turns.addElement(new UnitNumberTurn(entity.getOwnerId(), entity.getUnitNumber()));
                 } else {
@@ -3905,6 +3980,13 @@ public class TWGameManager extends AbstractGameManager {
                     return false;
                 }
             }
+        } else if (!evacuation && AirborneDismountRules.isCarrierAirborne(unloader, hex, elevation)) {
+            // Leaving a WiGE that has not landed: VTOL infantry stay at its elevation, jump infantry land on the
+            // ground or roof and count as having jumped (TW p.225, errata v12.0)
+            unit.setElevation(AirborneDismountRules.dismountElevation(unit, hex, elevation));
+            if ((unit.getMovementMode() != EntityMovementMode.VTOL) && (unit.getJumpMP() > 0)) {
+                unit.moved = EntityMovementType.MOVE_JUMP;
+            }
         } else if (game.getBuildingAt(pos, unit.getBoardId()).isPresent()) {
             // non-flying unit unloading units into a building
             // -> sit in the building at the same elevation
@@ -4118,10 +4200,7 @@ public class TWGameManager extends AbstractGameManager {
     boolean launchUnit(Entity unloader, Targetable unloaded, Coords pos, int facing, int velocity, int altitude,
           int[] moveVec, int bonus) {
 
-        Entity unit;
-        if (unloaded instanceof Entity && unloader instanceof Aero) {
-            unit = (Entity) unloaded;
-        } else {
+        if (!(unloaded instanceof Entity unit) || !(unloader instanceof IAero aeroUnloader)) {
             return false;
         }
 
@@ -4218,8 +4297,8 @@ public class TWGameManager extends AbstractGameManager {
 
         // launching from an OOC vessel causes damage
         // same thing if faster than 2 velocity in atmosphere
-        if ((((Aero) unloader).isOutControlTotal() && !unit.isDoomed()) ||
-              ((((Aero) unloader).getCurrentVelocity() > 2) && !game.getBoard().isSpace())) {
+        if ((aeroUnloader.isOutControlTotal() && !unit.isDoomed()) ||
+              ((aeroUnloader.getCurrentVelocity() > 2) && !game.getBoard().isSpace())) {
             Roll diceRoll = Compute.rollD6(2);
             int damage = diceRoll.getIntValue() * 10;
             String rollCalc = damage + "[" + diceRoll.getIntValue() + " * 10]";
@@ -4772,11 +4851,12 @@ public class TWGameManager extends AbstractGameManager {
             int nextElevation = nextAltitude - nextHex.getLevel();
 
             boolean crashedIntoTerrain = curAltitude < nextAltitude;
+            boolean crashedIntoTrees = false;
             if (entity.getMovementMode() == EntityMovementMode.VTOL &&
                   (nextHex.containsTerrain(Terrains.WOODS) || nextHex.containsTerrain(Terrains.JUNGLE)) &&
                   nextElevation <= nextHex.terrainLevel(Terrains.FOLIAGE_ELEV)) {
                 crashedIntoTerrain = true;
-
+                crashedIntoTrees = true;
             }
 
             if (nextHex.containsTerrain(Terrains.BLDG_ELEV)) {
@@ -4809,6 +4889,28 @@ public class TWGameManager extends AbstractGameManager {
                 }
             }
 
+            // Airborne VTOL and WiGE vehicles (not LAMs, which use IO:AE p.107) follow TW p.68 when sliding
+            boolean isAirborneVehicleSlip = (entity instanceof Tank) && (elevation > 0)
+                  && ((entity.getMovementMode() == EntityMovementMode.VTOL)
+                  || (entity.getMovementMode() == EntityMovementMode.WIGE));
+            // TW p.55: a WiGE that enters a woods or jungle hex, including by a sideslip, crashes
+            if (isAirborneVehicleSlip && (entity.getMovementMode() == EntityMovementMode.WIGE)
+                  && (nextHex.containsTerrain(Terrains.WOODS) || nextHex.containsTerrain(Terrains.JUNGLE))) {
+                crashedIntoTerrain = true;
+                crashedIntoTrees = true;
+            }
+            // TW p.68: buildings, DropShips, Large Support Vehicles and infantry at or above the vehicle stop it
+            if (isAirborneVehicleSlip && !crashedIntoTerrain && (entity instanceof Tank slippingTank)) {
+                int slipAltitude = Math.max(curAltitude, nextHex.getLevel() + nextElevation);
+                Vector<Report> collisionReports = airborneVehicleCrashHandler.resolveSideslipCollision(slippingTank,
+                      curPos, nextPos, nextHex, game.getEntitiesVector(nextPos), slipAltitude, direction,
+                      getTable(direction, step), entity.delta_distance + skidDistance + 1);
+                if (collisionReports != null) {
+                    addReport(collisionReports);
+                    break;
+                }
+            }
+
             Entity crashDropShip = null;
             for (Entity en : game.getEntitiesVector(nextPos)) {
                 if ((en instanceof Dropship) && !en.isAirborne() && (nextAltitude <= (en.relHeight()))) {
@@ -4831,6 +4933,8 @@ public class TWGameManager extends AbstractGameManager {
                         r = new Report(2045);
                     }
 
+                } else if (crashedIntoTrees) {
+                    r = new Report(2053);
                 } else {
                     r = new Report(2045);
                 }
@@ -4843,14 +4947,17 @@ public class TWGameManager extends AbstractGameManager {
                 if ((entity.getMovementMode() == EntityMovementMode.WIGE) ||
                       (entity.getMovementMode() == EntityMovementMode.VTOL)) {
                     int table = getTable(direction, step);
+                    int crashFallElevation = Math.max(0, curAltitude - nextHex.getLevel());
                     elevation = nextElevation;
                     if (entity instanceof Tank) {
-                        addReport(crashVTOLorWiGE((Tank) entity, false, true, distance, curPos, elevation, table));
+                        addReport(airborneVehicleCrashHandler.crashVTOLorWiGE((Tank) entity, false, true,
+                              entity.delta_distance + skidDistance + 1, curPos, elevation, table));
                     }
 
-                    if ((nextHex.containsTerrain(Terrains.WATER) && !nextHex.containsTerrain(Terrains.ICE)) ||
-                          nextHex.containsTerrain(Terrains.WOODS) ||
-                          nextHex.containsTerrain(Terrains.JUNGLE)) {
+                    if (!(entity instanceof Tank) &&
+                          ((nextHex.containsTerrain(Terrains.WATER) && !nextHex.containsTerrain(Terrains.ICE)) ||
+                                nextHex.containsTerrain(Terrains.WOODS) ||
+                                nextHex.containsTerrain(Terrains.JUNGLE))) {
                         addReport(destroyEntity(entity, "could not land in crash site"));
                     } else if (elevation < nextHex.terrainLevel(Terrains.BLDG_ELEV)) {
                         IBuilding bldg = board.getBuildingAt(nextPos);
@@ -4872,6 +4979,10 @@ public class TWGameManager extends AbstractGameManager {
                         entity.setPosition(nextPos);
                         entity.setElevation(0);
                         addReport(doEntityDisplacementMinefieldCheck(entity, curPos, nextPos, nextElevation));
+                        if ((entity instanceof Tank crashedTank) && !crashedTank.isDoomed()) {
+                            addReport(airborneVehicleCrashHandler.resolveSideslipCrashAftermath(crashedTank, nextPos,
+                                  crashFallElevation, direction));
+                        }
                     }
                     break;
 
@@ -4915,7 +5026,8 @@ public class TWGameManager extends AbstractGameManager {
                     int table = getTable(direction, step);
                     elevation = nextElevation;
                     if (entity instanceof VTOL vtol) {
-                        addReport(crashVTOLorWiGE(vtol, false, true, distance, curPos, elevation, table));
+                        addReport(airborneVehicleCrashHandler.crashVTOLorWiGE(vtol, false, true,
+                              entity.delta_distance + skidDistance + 1, curPos, elevation, table));
                     }
                     break;
                 }
@@ -4927,7 +5039,9 @@ public class TWGameManager extends AbstractGameManager {
             // Have skidding units suffer falls (off a cliff).
             else if ((curAltitude > (nextAltitude + entity.getMaxElevationChange()) ||
                   (curHex.hasCliffTopTowards(nextHex) && curAltitude > nextAltitude)) &&
-                  !(entity.getMovementMode() == EntityMovementMode.WIGE && elevation > curHex.ceiling())) {
+                  !(isAirborneVehicleSlip
+                        ? AirborneVehicleCrashHandler.canAvoidSideslipFall((Tank) entity)
+                        : (entity.getMovementMode() == EntityMovementMode.WIGE && elevation > curHex.ceiling()))) {
                 addReport(doEntityFallsInto(entity,
                       entity.getElevation(),
                       curPos,
@@ -4957,8 +5071,10 @@ public class TWGameManager extends AbstractGameManager {
                 while (targets.hasNext()) {
                     Entity target = targets.next();
 
+                    // An airborne VTOL or WiGE only charges a unit whose TW height reaches it (TW p.68, p.99)
+                    int targetTop = isAirborneVehicleSlip ? (target.relHeight() + 1) : target.relHeight();
                     if ((target.getElevation() > (nextElevation + entity.getHeight())) ||
-                          (target.relHeight() < nextElevation)) {
+                          (targetTop < nextElevation)) {
                         // target is not in the way
                         continue;
                     }
@@ -5924,7 +6040,7 @@ public class TWGameManager extends AbstractGameManager {
                 crash_damage *= 2;
             }
             if (bldg != null) {
-                buildingCollapseHandler.collapseBuilding(bldg, game.getPositionMapMulti(), hitCoords, true, vReport);
+                buildingCollapseHandler.collapseBuilding(bldg, game.getPositionMapMulti(), hitCoords, vReport);
             }
             if (!damageDealt) {
                 report = new Report(9700, Report.PUBLIC);
@@ -6380,6 +6496,9 @@ public class TWGameManager extends AbstractGameManager {
         // return, re-deploy then
         // fly off again instantly.
         aero.setOutControl(false);
+        // A failed heat control roll this round only takes effect next round, so clear it too or the unit is
+        // put back out of control while off the board, where it never gets a recovery roll.
+        aero.setOutControlHeat(false);
 
         return r;
     }
@@ -6870,13 +6989,19 @@ public class TWGameManager extends AbstractGameManager {
 
         if (unsecured) {
             // roll hit location to get a new critical
-            HitData hit = ((Entity) a).rollHitLocation(ToHitData.HIT_ABOVE, ToHitData.SIDE_FRONT);
-            addReport(applyCriticalHit((Entity) a,
-                  hit.getLocation(),
-                  new CriticalSlot(0, ((Aero) a).getPotCrit()),
-                  true,
-                  1,
-                  false));
+            Entity takingOff = (Entity) a;
+            HitData hit = takingOff.rollHitLocation(ToHitData.HIT_ABOVE, ToHitData.SIDE_FRONT);
+            if (a instanceof Aero aero) {
+                addReport(applyCriticalHit(takingOff,
+                      hit.getLocation(),
+                      new CriticalSlot(0, aero.getPotCrit()),
+                      true,
+                      1,
+                      false));
+            } else {
+                // A LAM takes criticals by slot, like a Mek, so it has no aerospace critical to apply (issue #8027)
+                addReport(oneCriticalEntity(takingOff, hit.getLocation(), hit.isRear(), 0));
+            }
         }
 
     }
@@ -6955,11 +7080,24 @@ public class TWGameManager extends AbstractGameManager {
     }
 
     /**
-     * Creates an artillery flare of the given radius above the target
+     * Creates an artillery flare of the given radius above the target, on the first board.
+     *
+     * @deprecated a flare lights only its own board; use {@link #deliverArtilleryFlare(Coords, int, int)}
      */
+    @Deprecated(since = "0.51.01", forRemoval = true)
     public void deliverArtilleryFlare(Coords coords, int radius) {
-        Flare flare = new Flare(coords, 0, 5, radius, Flare.F_DRIFTING);
+        deliverArtilleryFlare(coords, 0, radius);
+    }
+
+    /**
+     * Creates an artillery flare of the given radius above the target, on the board it was fired at, drifting with the
+     * wind. It lights from the turn it arrives and lasts five turns, that one included (TO:AR p.152). The Core Rules
+     * have no illumination rounds yet, so this Total Warfare rule applies under both.
+     */
+    public void deliverArtilleryFlare(Coords coords, int boardId, int radius) {
+        Flare flare = new Flare(coords, boardId, 5, radius, Flare.F_IGNITED | Flare.F_DRIFTING);
         game.addFlare(flare);
+        LOGGER.debug("[Illumination] flare of radius {} over {} on board {}", radius, coords, boardId);
     }
 
     public void deliverMortarFlare(Coords coords, int boardId, int duration) {
@@ -7821,7 +7959,7 @@ public class TWGameManager extends AbstractGameManager {
      *
      * @return - <code>true</code> if the entity set off any mines
      */
-    private boolean enterMinefield(Entity entity, Coords c, int curElev, boolean isOnGround, Vector<Report> vMineReport,
+    boolean enterMinefield(Entity entity, Coords c, int curElev, boolean isOnGround, Vector<Report> vMineReport,
           int target) {
         Report r;
         boolean trippedMine = false;
@@ -8197,7 +8335,7 @@ public class TWGameManager extends AbstractGameManager {
     /**
      * Clear any detonated mines at these coords
      */
-    private void clearDetonatedMines(Coords c, int target) {
+    void clearDetonatedMines(Coords c, int target) {
         Enumeration<Minefield> minefields = game.getMinefields(c).elements();
         List<Minefield> mfRemoved = new ArrayList<>();
         while (minefields.hasMoreElements()) {
@@ -9296,6 +9434,113 @@ public class TWGameManager extends AbstractGameManager {
     }
 
     /**
+     * Rolls an accidental fall from above (TW p.152) against the unit below: an automatic hit on a vehicle or DropShip,
+     * otherwise 7 plus the target's movement and terrain modifiers. On a hit, the target takes the falling damage in
+     * 5-point groups on the fall from above table.
+     *
+     * @param faller        the unit falling
+     * @param target        the unit being fallen on
+     * @param fallElevation the levels the unit falls
+     * @param reports       the reports to add to
+     *
+     * @return {@code true} if the fall hits the target
+     */
+    boolean resolveAccidentalFallFromAboveHit(Entity faller, Entity target, int fallElevation,
+          Vector<Report> reports) {
+        Report report;
+        // determine to-hit number
+        ToHitData toHit = new ToHitData(7, "base");
+        if ((target instanceof Tank) || (target instanceof Dropship)) {
+            toHit = new ToHitData(TargetRoll.AUTOMATIC_SUCCESS, "Target is a Tank");
+        } else {
+            toHit.append(Compute.getTargetMovementModifier(game, target.getId()));
+            toHit.append(Compute.getTargetTerrainModifier(game, target));
+        }
+
+        if (toHit.getValue() == TargetRoll.AUTOMATIC_FAIL) {
+            // automatic miss
+            report = new Report(2213);
+            report.add(toHit.getDesc());
+            reports.add(report);
+            return false;
+        }
+
+        // collision roll
+        final Roll diceRoll = Compute.rollD6(2);
+
+        if (toHit.getValue() == TargetRoll.AUTOMATIC_SUCCESS) {
+            report = new Report(2212);
+            report.add(toHit.getValue());
+        } else {
+            report = new Report(2215);
+            report.subject = faller.getId();
+            report.add(toHit.getValue());
+            report.add(diceRoll);
+            report.newlines = 0;
+        }
+
+        report.indent();
+        reports.add(report);
+
+        if (diceRoll.getIntValue() < toHit.getValue()) {
+            return false;
+        }
+        // deal damage to target
+        int damage = Compute.getAccidentalFallFromAboveDamageFor(faller,
+              Game.rulesManager.getRulesMovement().getAccidentalFallElevation(fallElevation, target.getHeight()));
+        report = new Report(2220);
+        report.subject = target.getId();
+        report.addDesc(target);
+        report.add(damage);
+        reports.add(report);
+        while (damage > 0) {
+            int cluster = Math.min(5, damage);
+            HitData hit = Game.rulesManager.getRulesPhysical().getFallFromAboveTable(target);
+            hit.setGeneralDamageType(HitDamageType.DAMAGE_PHYSICAL_NONATTACK);
+            reports.addAll(damageEntity(target, hit, cluster));
+            damage -= cluster;
+        }
+        return true;
+    }
+
+    /**
+     * After an accidental fall from above hits, the unit fallen on is pushed out of the hex, or destroyed if it cannot
+     * be, when the hex now breaks the stacking limits. A DropShip is never pushed; the faller is instead.
+     *
+     * @param faller    the unit that fell
+     * @param fallPosition      the hex it fell into
+     * @param direction the direction of the fall
+     * @param reports   the reports to add to
+     */
+    void displaceUnitFallenOn(Entity faller, Coords fallPosition, int direction, Vector<Report> reports) {
+        // defender pushed away, or destroyed, if there is a
+        // stacking violation
+        Entity violation = Compute.stackingViolation(game, faller, fallPosition, null, faller.climbMode(), false);
+        if (violation != null) {
+            PilotingRollData displacementRoll = new PilotingRollData(violation.getId(), 2, "fallen on");
+            if (violation instanceof Dropship) {
+                violation = faller;
+                displacementRoll = null;
+            }
+            Coords displacedTo = Compute.getValidDisplacement(game, violation.getId(), fallPosition, direction);
+            if (displacedTo != null) {
+                reports.addAll(doEntityDisplacement(violation, fallPosition, displacedTo, displacementRoll));
+                // Update the violating entity's position on the
+                // client.
+                entityUpdate(violation.getId());
+            } else {
+                // ack! automatic death! Tanks
+                // suffer an ammo/power plant hit.
+                // TODO : a Mek suffers a Head Blown Off crit.
+                reports.addAll(destroyEntity(violation,
+                      "impossible displacement",
+                      violation instanceof Mek,
+                      violation instanceof Mek));
+            }
+        }
+    }
+
+    /**
      * Process a fall when moving from the source hex to the destination hex. Depending on the elevations of the hexes,
      * the Entity could land in the source or destination hexes. Check for any conflicts and resolve them. Deal damage
      * to faller.
@@ -9390,94 +9635,18 @@ public class TWGameManager extends AbstractGameManager {
             r.addDesc(affaTarget);
             vPhaseReport.add(r);
 
-            // determine to-hit number
-            ToHitData toHit = new ToHitData(7, "base");
-            if ((affaTarget instanceof Tank) || (affaTarget instanceof Dropship)) {
-                toHit = new ToHitData(TargetRoll.AUTOMATIC_SUCCESS, "Target is a Tank");
-            } else {
-                toHit.append(Compute.getTargetMovementModifier(game, affaTarget.getId()));
-                toHit.append(Compute.getTargetTerrainModifier(game, affaTarget));
-            }
-
-            if (toHit.getValue() != TargetRoll.AUTOMATIC_FAIL) {
-                // collision roll
-                final Roll diceRoll = Compute.rollD6(2);
-
-                if (toHit.getValue() == TargetRoll.AUTOMATIC_SUCCESS) {
-                    r = new Report(2212);
-                    r.add(toHit.getValue());
-                } else {
-                    r = new Report(2215);
-                    r.subject = entity.getId();
-                    r.add(toHit.getValue());
-                    r.add(diceRoll);
-                    r.newlines = 0;
-                }
-
-                r.indent();
-                vPhaseReport.add(r);
-
-                if (diceRoll.getIntValue() >= toHit.getValue()) {
-                    // deal damage to target
-                    int damage = Compute.getAccidentalFallFromAboveDamageFor(entity,
-                          Game.rulesManager.getRulesMovement().getAccidentalFallElevation(fallElevation,
-                                affaTarget.getHeight()));
-                    r = new Report(2220);
-                    r.subject = affaTarget.getId();
-                    r.addDesc(affaTarget);
-                    r.add(damage);
-                    vPhaseReport.add(r);
-                    while (damage > 0) {
-                        int cluster = Math.min(5, damage);
-                        HitData hit = Game.rulesManager.getRulesPhysical().getFallFromAboveTable(affaTarget);
-                        hit.setGeneralDamageType(HitDamageType.DAMAGE_PHYSICAL_NONATTACK);
-                        vPhaseReport.addAll(damageEntity(affaTarget, hit, cluster));
-                        damage -= cluster;
-                    }
-
-                    // attacker falls as normal, on his back
-                    // only given a modifier, so flesh out into a full piloting
-                    // roll
-                    PilotingRollData pilotRoll = entity.getBasePilotingRoll();
-                    pilotRoll.append(roll);
-                    vPhaseReport.addAll(doEntityFall(entity, dest,
-                          Game.rulesManager.getRulesMovement().getAccidentalFallElevation(fallElevation,
-                                affaTarget.getHeight()), 3, pilotRoll, false, false));
-                    vPhaseReport.addAll(doEntityDisplacementMinefieldCheck(entity, src, dest, entity.getElevation()));
-
-                    // defender pushed away, or destroyed, if there is a
-                    // stacking violation
-                    Entity violation = Compute.stackingViolation(game, entity, dest, null, entity.climbMode(),
-                          false);
-                    if (violation != null) {
-                        PilotingRollData prd = new PilotingRollData(violation.getId(), 2, "fallen on");
-                        if (violation instanceof Dropship) {
-                            violation = entity;
-                            prd = null;
-                        }
-                        Coords targetDest = Compute.getValidDisplacement(game, violation.getId(), dest, direction);
-                        if (targetDest != null) {
-                            vPhaseReport.addAll(doEntityDisplacement(violation, dest, targetDest, prd));
-                            // Update the violating entity's position on the
-                            // client.
-                            entityUpdate(violation.getId());
-                        } else {
-                            // ack! automatic death! Tanks
-                            // suffer an ammo/power plant hit.
-                            // TODO : a Mek suffers a Head Blown Off crit.
-                            vPhaseReport.addAll(destroyEntity(violation,
-                                  "impossible displacement",
-                                  violation instanceof Mek,
-                                  violation instanceof Mek));
-                        }
-                    }
-                    return vPhaseReport;
-                }
-            } else {
-                // automatic miss
-                r = new Report(2213);
-                r.add(toHit.getDesc());
-                vPhaseReport.add(r);
+            if (resolveAccidentalFallFromAboveHit(entity, affaTarget, fallElevation, vPhaseReport)) {
+                // attacker falls as normal, on his back
+                // only given a modifier, so flesh out into a full piloting
+                // roll
+                PilotingRollData pilotRoll = entity.getBasePilotingRoll();
+                pilotRoll.append(roll);
+                vPhaseReport.addAll(doEntityFall(entity, dest,
+                      Game.rulesManager.getRulesMovement().getAccidentalFallElevation(fallElevation,
+                            affaTarget.getHeight()), 3, pilotRoll, false, false));
+                vPhaseReport.addAll(doEntityDisplacementMinefieldCheck(entity, src, dest, entity.getElevation()));
+                displaceUnitFallenOn(entity, dest, direction, vPhaseReport);
+                return vPhaseReport;
             }
             // ok, we missed, let's fall into a valid other hex and not cause an
             // AFFA while doing so
@@ -10271,6 +10440,8 @@ public class TWGameManager extends AbstractGameManager {
                     entity.setSpotting(true);
                     entity.setSpotTargetId(spotAction.getTargetId());
                 }
+                // a scan is resolved in the End Phase; a later order from the same unit replaces this one
+                case ScanAction scanAction -> entity.setPendingScan(scanAction);
                 default ->
                     // add to the normal attack list.
                       game.addAction(ea);
@@ -11063,7 +11234,6 @@ public class TWGameManager extends AbstractGameManager {
                 }
                 case FlipArmsAction faa -> entity.setArmsFlipped(faa.getIsFlipped());
                 case FindClubAction ignored -> resolveFindClub(entity);
-                case UnjamAction ignored -> resolveUnjam(entity);
                 case ClearMinefieldAction clearMinefieldAction ->
                       resolveClearMinefield(entity, clearMinefieldAction.getMinefield());
                 case TriggerAPPodAction tapa -> {
@@ -11107,6 +11277,8 @@ public class TWGameManager extends AbstractGameManager {
                 }
                 case RepairWeaponMalfunctionAction repairWeaponMalfunctionAction ->
                       new WeaponMalfunctionRepairHandler(this).repair(entity, repairWeaponMalfunctionAction);
+                case ReconCameraSpotAction cameraSpotAction ->
+                      new ReconCameraHandler(this).resolveSpot(entity, cameraSpotAction);
                 case DisengageAction ignored -> {
                     MovePath path = new MovePath(game, entity);
                     path.addStep(MoveStepType.FLEE);
@@ -11126,6 +11298,23 @@ public class TWGameManager extends AbstractGameManager {
                 }
                 default -> {
                 }
+            }
+        }
+    }
+
+    /**
+     * Called to complete weapon unjams
+     */
+    void resolveUnJams() {
+        // loop through actions and handle everything we expect except attacks
+        for (Enumeration<EntityAction> gameActions = game.getActions(); gameActions.hasMoreElements(); ) {
+            EntityAction ea = gameActions.nextElement();
+            Entity entity = game.getEntity(ea.getEntityId());
+            if (entity == null) {
+                continue;
+            }
+            if (ea instanceof UnjamAction) {
+                resolveUnjam(entity);
             }
         }
     }
@@ -15848,7 +16037,7 @@ public class TWGameManager extends AbstractGameManager {
     /**
      * Handle a charge's damage
      */
-    private void resolveChargeDamage(Entity ae, Entity te, ToHitData toHit, int direction) {
+    void resolveChargeDamage(Entity ae, Entity te, ToHitData toHit, int direction) {
         resolveChargeDamage(ae, te, toHit, direction, false, true, false);
     }
 
@@ -16336,6 +16525,14 @@ public class TWGameManager extends AbstractGameManager {
      */
     void resolveObjectives() {
         new ObjectiveResolutionHandler(this).resolveObjectives();
+    }
+
+    /**
+     * Resolves the scans units ordered this turn and settles the readings of units that have left. Delegates to
+     * {@link ObjectiveScanHandler} so the scanning rules do not add to this already very large class.
+     */
+    void resolveScans() {
+        new ObjectiveScanHandler(this).resolveScans();
     }
 
     /**
@@ -19087,7 +19284,7 @@ public class TWGameManager extends AbstractGameManager {
             // airborne VTOL/WiGE movement but crash through their own handlers
             if (entity instanceof Tank tank && tank.isShutDown() && tank.isAirborneVTOLorWIGE()
                   && !(tank.isDestroyed() || tank.isDoomed())) {
-                addReport(forceLandVTOLorWiGE(tank));
+                addReport(airborneVehicleCrashHandler.forceLandVTOLorWiGE(tank));
             }
         }
     }
@@ -21794,7 +21991,13 @@ public class TWGameManager extends AbstractGameManager {
                         }
                         Mounted<?> mounted = slot1.getMount();
                         if (mounted.equals(equipmentHit)) {
-                            aero.hitAllCriticalSlots(loc, i);
+                            slot1.setHit(true);
+                            if (mounted.getType() instanceof ACWeapon) {
+                                Game.rulesManager.getRulesWeapons().setACHit(slot1, mounted, reports, aero.getId());
+                            }
+                            if (slot1.isHit()) {
+                                aero.hitAllCriticalSlots(loc, i);
+                            }
                             break;
                         }
                     }
@@ -21811,7 +22014,14 @@ public class TWGameManager extends AbstractGameManager {
                                 }
                                 Mounted<?> mounted = slot1.getMount();
                                 if (mounted.equals(bayWeapon)) {
-                                    aero.hitAllCriticalSlots(loc, i);
+                                    slot1.setHit(true);
+                                    if (mounted.getType() instanceof ACWeapon) {
+                                        Game.rulesManager.getRulesWeapons()
+                                                         .setACHit(slot1, mounted, reports, aero.getId());
+                                    }
+                                    if (slot1.isHit()) {
+                                        aero.hitAllCriticalSlots(loc, i);
+                                    }
                                     break;
                                 }
                             }
@@ -22490,7 +22700,7 @@ public class TWGameManager extends AbstractGameManager {
                     reports.add(r);
                     tank.getCrew().setDoomed(true);
                     if (tank.isAirborneVTOLorWIGE()) {
-                        reports.addAll(crashVTOLorWiGE(tank));
+                        reports.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE(tank));
                     }
                 } else if (tank.hasActiveDNI() &&
                       tank.hasAbility(OptionsConstants.MD_VDNI) &&
@@ -22516,7 +22726,7 @@ public class TWGameManager extends AbstractGameManager {
                         reports.add(r);
                         tank.getCrew().setDoomed(true);
                         if (tank.isAirborneVTOLorWIGE()) {
-                            reports.addAll(crashVTOLorWiGE(tank));
+                            reports.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE(tank));
                         }
                     }
                 }
@@ -22536,7 +22746,7 @@ public class TWGameManager extends AbstractGameManager {
                 if (!(tank.isDestroyed() || tank.isDoomed())) {
                     tank.immobilize();
                     if (tank.isAirborneVTOLorWIGE()) {
-                        reports.addAll(forceLandVTOLorWiGE(tank));
+                        reports.addAll(airborneVehicleCrashHandler.forceLandVTOLorWiGE(tank));
                     } else if (tank.getMovementMode() == EntityMovementMode.HOVER) {
                         reports.addAll(sinkImmobilizedHover(tank));
                     }
@@ -22624,7 +22834,13 @@ public class TWGameManager extends AbstractGameManager {
                     }
                     Mounted<?> mounted = slot1.getMount();
                     if (mounted.equals(weapon)) {
-                        tank.hitAllCriticalSlots(loc, i);
+                        slot1.setHit(true);
+                        if (mounted.getType() instanceof ACWeapon) {
+                            Game.rulesManager.getRulesWeapons().setACHit(slot1, mounted, reports, tank.getId());
+                        }
+                        if (slot1.isHit()) {
+                            tank.hitAllCriticalSlots(loc, i);
+                        }
                         break;
                     }
                 }
@@ -22671,7 +22887,7 @@ public class TWGameManager extends AbstractGameManager {
                         crash = !tank.canGoDown();
                     }
                     if (crash) {
-                        reports.addAll(crashVTOLorWiGE(tank));
+                        reports.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE(tank));
                     }
                 }
                 break;
@@ -22695,7 +22911,7 @@ public class TWGameManager extends AbstractGameManager {
                               // Don't bother with forcing a landing if
                               // we're already otherwise destroyed.
                               && !(tank.isDestroyed() || tank.isDoomed())) {
-                            reports.addAll(forceLandVTOLorWiGE(tank));
+                            reports.addAll(airborneVehicleCrashHandler.forceLandVTOLorWiGE(tank));
                         }
                     }
                 }
@@ -22711,7 +22927,7 @@ public class TWGameManager extends AbstractGameManager {
                     r.subject = tank.getId();
                     reports.add(r);
                     tank.immobilize();
-                    reports.addAll(crashVTOLorWiGE(tank, true));
+                    reports.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE(tank, true));
                 }
                 break;
             case VTOL.CRIT_FLIGHT_STABILIZER:
@@ -22840,332 +23056,29 @@ public class TWGameManager extends AbstractGameManager {
     }
 
     /**
-     * Resolves the forced landing of one airborne {@code VTOL} or {@code WiGE} in its current hex. As this method is
-     * only for internal use and not part of the exported public API, it simply relies on its client code to only ever
-     * hand it a valid airborne vehicle and does not run any further checks of its own.
+     * Crashes an airborne VTOL or WiGE in its current hex. See {@link AirborneVehicleCrashHandler}.
      *
-     * @param en The {@code VTOL} or {@code WiGE} in question.
+     * @param tank the airborne VTOL or WiGE to crash
      *
-     * @return The resulting {@code Vector} of {@code Report}s.
+     * @return the resulting reports
      */
-    private Vector<Report> forceLandVTOLorWiGE(Tank en) {
-        Vector<Report> vDesc = new Vector<>();
-        PilotingRollData psr = en.getBasePilotingRoll();
-        Hex hex = game.getBoard().getHex(en.getPosition());
-
-        if (en instanceof VTOL) {
-            psr.addModifier(4, "VTOL making forced landing");
-        } else {
-            psr.addModifier(0, "WiGE making forced landing");
-        }
-
-        if (en.hasAbility(OptionsConstants.PILOT_WIND_WALKER) && PilotSPAHelper.isWindWalkerValid(en)) {
-            psr.addModifier(-1, "Wind Walker SPA");
-        }
-
-        int elevation = Math.max(hex.terrainLevel(Terrains.BLDG_ELEV), hex.terrainLevel(Terrains.BRIDGE_ELEV));
-        elevation = Math.max(elevation, 0);
-        elevation = Math.min(elevation, en.getElevation());
-        if (en.getElevation() > elevation) {
-            if (!hex.containsTerrain(Terrains.FUEL_TANK) &&
-                  !hex.containsTerrain(Terrains.JUNGLE) &&
-                  !hex.containsTerrain(Terrains.MAGMA) &&
-                  !hex.containsTerrain(Terrains.MUD) &&
-                  !hex.containsTerrain(Terrains.RUBBLE) &&
-                  !hex.containsTerrain(Terrains.WATER) &&
-                  !hex.containsTerrain(Terrains.WOODS)) {
-                Report r = new Report(2180);
-                r.subject = en.getId();
-                r.addDesc(en);
-                r.add(psr.getLastPlainDesc(), true);
-                vDesc.add(r);
-
-                // roll
-                final Roll diceRoll = Compute.rollD6(2);
-                r = new Report(2185);
-                r.subject = en.getId();
-                r.add(psr.getValueAsString());
-                r.add(psr.getDesc());
-                r.add(diceRoll);
-
-                if (diceRoll.getIntValue() < psr.getValue()) {
-                    r.choose(false);
-                    vDesc.add(r);
-                    vDesc.addAll(crashVTOLorWiGE(en, true));
-                } else {
-                    r.choose(true);
-                    vDesc.add(r);
-                    en.setElevation(elevation);
-                }
-            } else {
-                vDesc.addAll(crashVTOLorWiGE(en, true));
-            }
-        }
-        return vDesc;
+    Vector<Report> crashVTOLorWiGE(Tank tank) {
+        return airborneVehicleCrashHandler.crashVTOLorWiGE(tank);
     }
 
     /**
-     * Crash a VTOL
+     * Resolves a WiGE vehicle landing in its current hex: it crashes unless the hex is clear, paved or water, and it
+     * charges a grounded DropShip or Large Support Vehicle there (TW p.55). Adds the reports to the phase report. See
+     * {@link AirborneVehicleCrashHandler#resolveWiGELanding(Tank, int, int)}.
      *
-     * @param en the <code>VTOL</code> to be crashed
+     * @param wige          the landing WiGE vehicle, already placed in the hex it lands in
+     * @param fromElevation the elevation it lands from
+     * @param hexesMoved    the hexes it moved this turn
      *
-     * @return the <code>Vector<Report></code> containing phase reports
+     * @return {@code true} if the WiGE landed safely, {@code false} if it crashed or was destroyed
      */
-    Vector<Report> crashVTOLorWiGE(Tank en) {
-        return crashVTOLorWiGE(en, false, false, 0, en.getPosition(), en.getElevation(), 0);
-    }
-
-    /**
-     * Crash a VTOL or WiGE.
-     *
-     * @param en              The {@code VTOL} or {@code WiGE} to crash.
-     * @param rerollRotorHits Whether any rotor hits from the crash should be rerolled, typically after a "rotor
-     *                        destroyed" critical hit.
-     *
-     * @return The {@code Vector<Report>} of resulting reports.
-     */
-    private Vector<Report> crashVTOLorWiGE(Tank en, boolean rerollRotorHits) {
-        return crashVTOLorWiGE(en, rerollRotorHits, false, 0, en.getPosition(), en.getElevation(), 0);
-    }
-
-    /**
-     * Crash a VTOL or WiGE.
-     *
-     * @param en              The {@code VTOL} or {@code WiGE} to crash.
-     * @param rerollRotorHits Whether any rotor hits from the crash should be rerolled, typically after a "rotor
-     *                        destroyed" critical hit.
-     * @param sideSlipCrash   A <code>boolean</code> value indicating whether this is a sideslip crash or not.
-     * @param hexesMoved      The <code>int</code> number of hexes moved.
-     * @param crashPos        The <code>Coords</code> of the crash
-     * @param crashElevation  The <code>int</code> elevation of the VTOL
-     * @param impactSide      The <code>int</code> describing the side on which the VTOL falls
-     *
-     * @return a <code>Vector<Report></code> of Reports.
-     */
-
-    private Vector<Report> crashVTOLorWiGE(Tank en, boolean rerollRotorHits, boolean sideSlipCrash, int hexesMoved,
-          Coords crashPos, int crashElevation, int impactSide) {
-        Vector<Report> vDesc = new Vector<>();
-        Report r;
-
-        // we might be off the board after a DFA, so return then
-        if (!game.getBoard().contains(crashPos)) {
-            return vDesc;
-        }
-
-        if (!sideSlipCrash) {
-            // report lost movement and crashing
-            r = new Report(6260);
-            r.subject = en.getId();
-            r.newlines = 0;
-            r.addDesc(en);
-            vDesc.addElement(r);
-            int newElevation = 0;
-            Hex fallHex = game.getBoard().getHex(crashPos);
-
-            // May land on roof of building or bridge
-            if (fallHex.containsTerrain(Terrains.BLDG_ELEV)) {
-                newElevation = fallHex.terrainLevel(Terrains.BLDG_ELEV);
-            } else if (fallHex.containsTerrain(Terrains.BRIDGE_ELEV)) {
-                newElevation = fallHex.terrainLevel(Terrains.BRIDGE_ELEV);
-                if (newElevation > crashElevation) {
-                    newElevation = 0; // vtol was under bridge already
-                }
-            }
-
-            int fall = crashElevation - newElevation;
-            if (fall == 0) {
-                // already on ground, no harm done
-                r = new Report(6265);
-                r.subject = en.getId();
-                vDesc.addElement(r);
-                return vDesc;
-            }
-            // set elevation 1st to avoid multiple crashes
-            en.setElevation(newElevation);
-
-            // plummets to ground
-            r = new Report(6270);
-            r.subject = en.getId();
-            r.add(fall);
-            vDesc.addElement(r);
-
-            // facing after fall
-            String side;
-            int table;
-            int facing = Game.rulesManager.getRulesCharts().getFacingForFall();
-            table = switch (facing) {
-                case 1, 2 -> {
-                    side = "right side";
-                    yield ToHitData.SIDE_RIGHT;
-                }
-                case 3 -> {
-                    side = "rear";
-                    yield ToHitData.SIDE_REAR;
-                }
-                case 4, 5 -> {
-                    side = "left side";
-                    yield ToHitData.SIDE_LEFT;
-                }
-                default -> {
-                    side = "front";
-                    yield ToHitData.SIDE_FRONT;
-                }
-            };
-
-            if (newElevation <= 0) {
-                boolean waterFall = fallHex.containsTerrain(Terrains.WATER);
-                if (waterFall && fallHex.containsTerrain(Terrains.ICE)) {
-                    Roll diceRoll = Compute.rollD6(1);
-                    r = new Report(2119);
-                    r.subject = en.getId();
-                    r.addDesc(en);
-                    r.add(diceRoll);
-                    r.subject = en.getId();
-                    vDesc.add(r);
-                    if (diceRoll.getIntValue() > 3) {
-                        vDesc.addAll(resolveIceBroken(crashPos));
-                    } else {
-                        waterFall = false; // saved by ice
-                    }
-                }
-                if (waterFall) {
-                    // falls into water and is destroyed
-                    r = new Report(6275);
-                    r.subject = en.getId();
-                    vDesc.addElement(r);
-                    vDesc.addAll(destroyEntity(en, "Fell into water", false, false));
-                    // not sure, is this salvageable?
-                }
-            }
-
-            // calculate damage for hitting the surface
-            int damage = (int) Math.round(en.getWeight() / 10.0) * (fall + 1);
-
-            // adjust damage for gravity
-            damage = Math.round(damage * game.getPlanetaryConditions().getGravity());
-            // report falling
-            r = new Report(6280);
-            r.subject = en.getId();
-            r.indent();
-            r.addDesc(en);
-            r.add(side);
-            r.add(damage);
-            // r.newlines = 0;
-            vDesc.addElement(r);
-
-            en.setFacing((en.getFacing() + (facing)) % 6);
-
-            boolean exploded = false;
-
-            // standard damage loop
-            while (damage > 0) {
-                int cluster = Math.min(5, damage);
-                HitData hit = en.rollHitLocation(ToHitData.HIT_NORMAL, table);
-                if ((en instanceof VTOL) && (hit.getLocation() == VTOL.LOC_ROTOR) && rerollRotorHits) {
-                    continue;
-                }
-                hit.setGeneralDamageType(HitDamageType.DAMAGE_PHYSICAL);
-                int[] isBefore = { en.getInternal(Tank.LOC_FRONT), en.getInternal(Tank.LOC_RIGHT),
-                                   en.getInternal(Tank.LOC_LEFT), en.getInternal(Tank.LOC_REAR) };
-                vDesc.addAll(damageEntity(en, hit, cluster));
-                int[] isAfter = { en.getInternal(Tank.LOC_FRONT), en.getInternal(Tank.LOC_RIGHT),
-                                  en.getInternal(Tank.LOC_LEFT), en.getInternal(Tank.LOC_REAR) };
-                for (int x = 0; x <= 3; x++) {
-                    if (isBefore[x] != isAfter[x]) {
-                        exploded = true;
-                        break;
-                    }
-                }
-                damage -= cluster;
-            }
-            if (exploded) {
-                r = new Report(6285);
-                r.subject = en.getId();
-                r.addDesc(en);
-                vDesc.addElement(r);
-                vDesc.addAll(explodeVTOLorWiGE(en));
-            }
-
-            // check for location exposure
-            vDesc.addAll(doSetLocationsExposure(en, fallHex, false, newElevation));
-
-        } else {
-            en.setElevation(0);// considered landed in the hex.
-            // crashes into ground thanks to sideslip
-            r = new Report(6290);
-            r.subject = en.getId();
-            r.addDesc(en);
-            vDesc.addElement(r);
-            int damage = (int) Math.round(en.getWeight() / 10.0) * (hexesMoved + 1);
-            boolean exploded = false;
-
-            // standard damage loop
-            while (damage > 0) {
-                int cluster = Math.min(5, damage);
-                HitData hit = en.rollHitLocation(ToHitData.HIT_NORMAL, impactSide);
-                hit.setGeneralDamageType(HitDamageType.DAMAGE_PHYSICAL);
-                int[] isBefore = { en.getInternal(Tank.LOC_FRONT), en.getInternal(Tank.LOC_RIGHT),
-                                   en.getInternal(Tank.LOC_LEFT), en.getInternal(Tank.LOC_REAR) };
-                vDesc.addAll(damageEntity(en, hit, cluster));
-                int[] isAfter = { en.getInternal(Tank.LOC_FRONT), en.getInternal(Tank.LOC_RIGHT),
-                                  en.getInternal(Tank.LOC_LEFT), en.getInternal(Tank.LOC_REAR) };
-                for (int x = 0; x <= 3; x++) {
-                    if (isBefore[x] != isAfter[x]) {
-                        exploded = true;
-                        break;
-                    }
-                }
-                damage -= cluster;
-            }
-            if (exploded) {
-                r = new Report(6295);
-                r.subject = en.getId();
-                r.addDesc(en);
-                vDesc.addElement(r);
-                vDesc.addAll(explodeVTOLorWiGE(en));
-            }
-
-        }
-
-        if (game.containsMinefield(crashPos)) {
-            // may set off any minefields in the hex
-            enterMinefield(en, crashPos, 0, true, vDesc, 7);
-            // it may also clear any minefields that it detonated
-            clearDetonatedMines(crashPos, 5);
-            resetMines();
-        }
-
-        return vDesc;
-
-    }
-
-    /**
-     * Explodes a VTOL or WiGE unit.
-     *
-     * @param entity The unit to explode.
-     *
-     * @return The new reports created by the events
-     */
-    private Vector<Report> explodeVTOLorWiGE(@Nullable Tank entity) {
-        Vector<Report> newReports = new Vector<>();
-        if (entity == null) {
-            IGame.LOGGER.error("Tried to explode null entity");
-            return newReports;
-
-        } else if (entity.hasEngine() && entity.getEngine().isFusion()) {
-            // fusion engine, no effect
-            newReports.addElement(new Report(6300).subject(entity.getId()));
-
-        } else {
-            if (game.hasBoardLocationOf(entity)) {
-                Hex hex = game.getHexOf(entity);
-                int fireTerrain = hex.hasVegetation() ? Terrains.FIRE_LVL_NORMAL : Terrains.FIRE_LVL_INFERNO;
-                ignite(entity.getPosition(), entity.getBoardId(), fireTerrain, newReports);
-            }
-            newReports.addAll(destroyEntity(entity, "crashed and burned", false, false));
-        }
-        return newReports;
+    boolean resolveWiGELanding(Tank wige, int fromElevation, int hexesMoved) {
+        return airborneVehicleCrashHandler.resolveWiGELanding(wige, fromElevation, hexesMoved);
     }
 
     /**
@@ -24348,6 +24261,8 @@ public class TWGameManager extends AbstractGameManager {
                     vDesc.addElement(r);
                     // Swarming infantry shouldn't take damage when their target dies
                     // http://bg.battletech.com/forums/total-warfare/swarming-question
+                    // unless it is a VTOL or WiGE destroyed in the air (TW p.222, errata v12.0)
+                    vDesc.addAll(new SwarmShakeOffHandler(this).damageSwarmerOfDestroyedUnit(entity, swarmer));
                     entityUpdate(swarmerId);
                 }
             }
@@ -24436,6 +24351,10 @@ public class TWGameManager extends AbstractGameManager {
         // Units in an Aerospace unit that is already on the ground usually survive if
         // they can evacuate the wreck.
         if (entity.isAirborne() || entity.isAirborneVTOLorWIGE()) {
+            survivable = false;
+        }
+        // A VTOL or WiGE destroyed in a crash takes all its infantry with it (TW p.224)
+        if (airborneVehicleCrashHandler.isCrashing(entity)) {
             survivable = false;
         }
 
@@ -25523,7 +25442,7 @@ public class TWGameManager extends AbstractGameManager {
             reports.add(r);
             reports.addAll(damageCrew(entity, 1, crewPos));
         } else {
-            Roll diceRoll = entity.getCrew().rollPilotingSkill();
+            Roll diceRoll = entity.getCrew().rollPilotingSkill(crewPos);
             r = new Report(2325);
             r.subject = entity.getId();
             r.add(entity.getCrew().getCrewType().getRoleName(crewPos));
@@ -26131,6 +26050,12 @@ public class TWGameManager extends AbstractGameManager {
                 vCanSee.addElement(player);
             }
         }
+        // A Recon Camera's whole side sees what the camera spotted this turn (TO:AUE p.150)
+        for (Player player : ReconCameraRules.playersSeeingThroughCameras(game, entity)) {
+            if (!vCanSee.contains(player)) {
+                vCanSee.addElement(player);
+            }
+        }
 
         // If the entity is hidden, skip; no one else will be able to see it.
         if (entity.isHidden()) {
@@ -26314,6 +26239,10 @@ public class TWGameManager extends AbstractGameManager {
             } else if (entity.isOffBoardObserved(pViewer.getTeam())) {
                 // if it's hostile and has been observed for counter-battery fire, we can "see"
                 // it
+                addVisibleEntity(vCanSee, entity);
+                continue;
+            } else if (ReconCameraRules.playersSeeingThroughCameras(game, entity).contains(pViewer)) {
+                // a Recon Camera on the viewer's side spotted it this turn (TO:AUE p.150)
                 addVisibleEntity(vCanSee, entity);
                 continue;
             }
@@ -26649,6 +26578,9 @@ public class TWGameManager extends AbstractGameManager {
 
             // Remove any carried pilot IDs (does not apply to other carried entities)
             entity.resetPickedUpMekWarriors();
+
+            // A unit joining this game has not left it yet, whatever happened to it in an earlier battle
+            entity.clearBattleOutcome();
 
             // If we're adding a ProtoMek, calculate its unit number.
             if (entity instanceof ProtoMek) {
@@ -27025,6 +26957,7 @@ public class TWGameManager extends AbstractGameManager {
             sendServerChat(ServerLobbyHelper.entityUpdateMessage(entity, game));
         } else {
             destroyEntityIfFatallyDamaged(entity);
+            settleTurnsAfterGamemasterAct(entity);
             // Editing a unit's damage in play is a gamemaster act, but it arrives as a unit update rather than a
             // command, so it is announced here with the same toast the gamemaster commands use.
             if (sender.isGameMaster()) {
@@ -27062,6 +26995,7 @@ public class TWGameManager extends AbstractGameManager {
         new DamageEditApplier(entity, spec).applyToEntity();
         entityUpdate(entity.getId());
         destroyEntityIfFatallyDamaged(entity);
+        settleTurnsAfterGamemasterAct(entity);
         // Editing a unit's damage in play is a gamemaster act, but it arrives as its own packet rather than a
         // command, so it is announced here with the same toast the gamemaster commands use.
         sendToast(GameToastEvent.Level.GAMEMASTER,
@@ -27994,7 +27928,7 @@ public class TWGameManager extends AbstractGameManager {
                                       (lastUnitNum == (char) entity.getUnitNumber());
                             }
                         });
-                        if (lastUnit.next() != null) {
+                        if (lastUnit.hasNext()) {
                             Entity lastUnitMember = lastUnit.next();
                             lastUnitMember.setUnitNumber(deletedUnitNum);
                             entityUpdate(lastUnitMember.getId());
@@ -29023,89 +28957,39 @@ public class TWGameManager extends AbstractGameManager {
         return rv;
     }
 
+    /**
+     * Damages the infantry inside a building hex from an attack on the building that is not a weapon attack, such as a
+     * physical attack or a unit forcing its way in. The damage counts as direct fire (TW p. 216).
+     *
+     * @param bldg      the building attacked
+     * @param damage    the damage of the attack on the building
+     * @param hexCoords the building hex attacked
+     *
+     * @return the reports of the damage
+     */
     public Vector<Report> damageInfantryIn(IBuilding bldg, int damage, Coords hexCoords) {
-        return damageInfantryIn(bldg, damage, hexCoords, WeaponType.WEAPON_NA);
+        return damageInfantryIn(bldg, damage, hexCoords, WeaponType.WEAPON_DIRECT_FIRE);
     }
 
     /**
-     * Apply the correct amount of damage that passes on to any infantry unit in the given building, based upon the
-     * amount of damage the building just sustained. This amount is a percentage dictated by pg. 172 of TW.
+     * Damages the infantry inside a building hex from an attack on the building from outside (TW p. 172). See
+     * {@link BuildingOccupantDamageHandler}.
      *
-     * @param building   - the <code>Building</code> that sustained the damage.
-     * @param damage - the <code>int</code> amount of damage.
+     * @param building       the building attacked, or {@code null} for none
+     * @param damage         the damage of the attack on the building
+     * @param hexCoords      the building hex attacked
+     * @param infDamageClass the attacking weapon's infantry damage class, or
+     *                       {@link WeaponType#WEAPON_INFANTRY_ORIGIN} for an attack by conventional infantry
+     *
+     * @return the reports of the damage
      */
-    public Vector<Report> damageInfantryIn(IBuilding building, int damage, Coords hexCoords, int infDamageClass) {
-        Vector<Report> vDesc = new Vector<>();
-
+    public Vector<Report> damageInfantryIn(@Nullable IBuilding building, int damage, Coords hexCoords,
+          int infDamageClass) {
         if (building == null) {
-            return vDesc;
+            return new Vector<>();
         }
-        // Calculate the amount of damage the infantry will sustain.
-        float percent = building.getDamageReductionFromOutside();
-        Report r;
-
-        // Round up at .5 points of damage.
-        int toInf = Math.round(damage * percent);
-
-        // some buildings scale remaining damage
-        toInf = (int) Math.floor(building.getDamageToScale() * toInf);
-
-        // Walk through the entities in the game.
-        for (Entity entity : game.getEntitiesVector()) {
-            final Coords coords = entity.getPosition();
-
-            // If the entity is infantry in the affected hex?
-            if (coords != null && (entity instanceof Infantry) && coords.equals(hexCoords)) {
-                // Is the entity is inside the building
-                // (instead of just on top of it)?
-                if (Compute.isInBuilding(game, entity, coords)) {
-
-                    // Report if the infantry receive no points of damage.
-                    if (toInf == 0) {
-                        r = new Report(6445);
-                        r.indent(3);
-                        r.subject = entity.getId();
-                        r.add(entity.getDisplayName());
-                        vDesc.addElement(r);
-                    } else {
-                        // Yup. Damage the entity.
-                        r = new Report(6450);
-                        r.indent(3);
-                        r.subject = entity.getId();
-                        r.add(toInf);
-                        r.add(entity.getDisplayName());
-                        vDesc.addElement(r);
-                        // need to adjust damage to conventional infantry
-                        // TW page 217 says left over damage gets treated as
-                        // direct fire ballistic damage
-                        if (!(entity instanceof BattleArmor)) {
-                            toInf = Compute.directBlowInfantryDamage(toInf,
-                                  0,
-                                  WeaponType.WEAPON_DIRECT_FIRE,
-                                  false,
-                                  false);
-                        }
-                        int remaining = toInf;
-                        int cluster = toInf;
-                        // Battle Armor units use 5 point clusters.
-                        if (entity instanceof BattleArmor) {
-                            cluster = 5;
-                        }
-                        while (remaining > 0) {
-                            int next = Math.min(cluster, remaining);
-                            HitData hit = entity.rollHitLocation(ToHitData.HIT_NORMAL, ToHitData.SIDE_FRONT);
-                            vDesc.addAll((damageEntity(entity, hit, next)));
-                            remaining -= next;
-                        }
-                    }
-
-                    Report.addNewline(vDesc);
-                } // End infantry-inside-building
-            } // End entity-is-infantry-in-building-hex
-        } // Handle the next entity
-
-        return vDesc;
-    } // End private void damageInfantryIn( Building, int )
+        return new BuildingOccupantDamageHandler(this).damageInfantryIn(building, damage, hexCoords, infDamageClass);
+    }
 
     /**
      * Determine if the given building should collapse. If so, inflict the appropriate amount of damage on each entity
@@ -29979,7 +29863,7 @@ public class TWGameManager extends AbstractGameManager {
                 if (caa.getTargetType() == Targetable.TYPE_ENTITY &&
                       ((Entity) caa.getTarget(game)).canFall() &&
                       caa.getClub().getType().hasFlag(MiscTypeFlag.S_CLUB)) {
-                    Game.rulesManager.getRulesPSR().clubImpact(game, attackingEntity);
+                    Game.rulesManager.getRulesPSR().clubImpact(game, (Entity) caa.getTarget(game));
                 }
             }
             case DfaAttackAction daa -> {
@@ -30018,10 +29902,9 @@ public class TWGameManager extends AbstractGameManager {
                 // If we're punching while prone (at a Tank,
                 // duh), then we can only use one arm.
                 if (attackingEntity.isProne()) {
-                    double oddsLeft = Compute.oddsAbove(toHit.getValue(),
-                          attackingEntity.hasAbility(OptionsConstants.PILOT_APTITUDE_PILOTING));
-                    double oddsRight = Compute.oddsAbove(toHitRight.getValue(),
-                          attackingEntity.hasAbility(OptionsConstants.PILOT_APTITUDE_PILOTING));
+                    boolean hasNaturalAptitudePiloting = attackingEntity.isUseNaturalAptitudePiloting();
+                    double oddsLeft = Compute.oddsAbove(toHit.getValue(), hasNaturalAptitudePiloting);
+                    double oddsRight = Compute.oddsAbove(toHitRight.getValue(), hasNaturalAptitudePiloting);
                     // Use the best attack.
                     if ((oddsLeft * damage) > (oddsRight * damageRight)) {
                         punchAttackAction.setArm(PunchAttackAction.LEFT);
@@ -30382,9 +30265,11 @@ public class TWGameManager extends AbstractGameManager {
 
     /**
      * Applies Edge to an ejection roll: if the roll failed and the crew has the failed-ejection Edge trigger enabled
-     * with Edge remaining, spends one Edge point and rerolls once.
+     * with Edge remaining, spends one Edge point and rerolls once. The reroll is made by the same crew member, so
+     * their own Natural Aptitude applies.
      *
      * @param entity     the ejecting unit
+     * @param crewPos    the crew slot making the ejection roll
      * @param rollTarget the ejection roll target number
      * @param diceRoll   the ejection roll that was made
      * @param vDesc      the report vector to append the Edge-use report to
@@ -30392,7 +30277,8 @@ public class TWGameManager extends AbstractGameManager {
      * @return the roll to use — the reroll if Edge was spent, otherwise the original roll
      */
     // package-private for testing
-    Roll applyEjectionEdge(Entity entity, PilotingRollData rollTarget, Roll diceRoll, Vector<Report> vDesc) {
+    Roll applyEjectionEdge(Entity entity, int crewPos, PilotingRollData rollTarget, Roll diceRoll,
+          Vector<Report> vDesc) {
         boolean isCheckFailed = diceRoll.getIntValue() < rollTarget.getValue();
         boolean shouldUseEdge = entity.shouldUseEdge(OptionsConstants.EDGE_WHEN_EJECT_FAILS);
         if (isCheckFailed && shouldUseEdge) {
@@ -30403,7 +30289,7 @@ public class TWGameManager extends AbstractGameManager {
             edgeReport.add(entity.getCrew().getOptions().intOption(OptionsConstants.EDGE));
             vDesc.addElement(edgeReport);
 
-            return entity.getCrew().rollPilotingSkill();
+            return entity.getCrew().rollPilotingSkill(crewPos);
         }
 
         return diceRoll;
@@ -30469,9 +30355,9 @@ public class TWGameManager extends AbstractGameManager {
                 }
                 rollTarget = getEjectModifiers(game, entity, crewPos, autoEject);
                 // roll
-                Roll diceRoll = entity.getCrew().rollPilotingSkill();
+                Roll diceRoll = entity.getCrew().rollPilotingSkill(crewPos);
                 // Edge may reroll a failed ejection roll once.
-                diceRoll = applyEjectionEdge(entity, rollTarget, diceRoll, vDesc);
+                diceRoll = applyEjectionEdge(entity, crewPos, rollTarget, diceRoll, vDesc);
 
                 if (entity.getCrew().getSlotCount() > 1) {
                     r = new Report(2193);
@@ -30663,7 +30549,7 @@ public class TWGameManager extends AbstractGameManager {
         // Mark the entity's crew as "ejected".
         entity.getCrew().setEjected(true);
         if (entity instanceof VTOL) {
-            vDesc.addAll(crashVTOLorWiGE((VTOL) entity));
+            vDesc.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE((VTOL) entity));
         }
         vDesc.addAll(destroyEntity(entity, "ejection", true, true));
 
@@ -31843,14 +31729,28 @@ public class TWGameManager extends AbstractGameManager {
      * @return a <code>Vector<Report></code> for the phase report
      */
     Vector<Report> resolveIceBroken(Coords c) {
+        //LEGACY use boardId version
+        return resolveIceBroken(c, 0);
+    }
+
+    /**
+     * remove Ice in the hex that's at the passed coords and board, and let entities fall into water below it, if
+     * there is water
+     *
+     * @param c       the <code>Coords</code> of the hex where ice should be removed
+     * @param boardId the id of the board the hex is on
+     *
+     * @return a <code>Vector<Report></code> for the phase report
+     */
+    Vector<Report> resolveIceBroken(Coords c, int boardId) {
         Vector<Report> vPhaseReport = new Vector<>();
-        Hex hex = game.getBoard().getHex(c);
+        Hex hex = game.getBoard(boardId).getHex(c);
         hex.removeTerrain(Terrains.ICE);
-        sendChangedHex(c);
+        sendChangedHex(c, boardId);
         // if there is water below the ice
         if (hex.terrainLevel(Terrains.WATER) > 0) {
             // drop entities on the surface into the water
-            for (Entity e : game.getEntitiesVector(c)) {
+            for (Entity e : game.getEntitiesVector(c, boardId)) {
                 // If the unit is on the surface, and is no longer allowed in
                 // the hex
                 boolean isHoverOrWiGE = (e.getMovementMode() == EntityMovementMode.HOVER) ||
@@ -31872,24 +31772,32 @@ public class TWGameManager extends AbstractGameManager {
      * melt any snow or ice in a hex, including checking for the effects of breaking through ice
      */
     private Vector<Report> meltIceAndSnow(Coords c, int entityId) {
+        //LEGACY use boardId version
+        return meltIceAndSnow(c, 0, entityId);
+    }
+
+    /**
+     * melt any snow or ice in a hex on the given board, including checking for the effects of breaking through ice
+     */
+    private Vector<Report> meltIceAndSnow(Coords c, int boardId, int entityId) {
         Vector<Report> vDesc = new Vector<>();
         Report r;
-        Hex hex = game.getBoard().getHex(c);
+        Hex hex = game.getBoard(boardId).getHex(c);
         r = new Report(3069);
         r.indent(2);
         r.subject = entityId;
         vDesc.add(r);
         if (hex.containsTerrain(Terrains.SNOW)) {
             hex.removeTerrain(Terrains.SNOW);
-            sendChangedHex(c);
+            sendChangedHex(c, boardId);
         }
         if (hex.containsTerrain(Terrains.ICE)) {
-            vDesc.addAll(resolveIceBroken(c));
+            vDesc.addAll(resolveIceBroken(c, boardId));
         }
         // if we were not in water, then add mud
         if (!hex.containsTerrain(Terrains.MUD) && !hex.containsTerrain(Terrains.WATER)) {
             hex.addTerrain(new Terrain(Terrains.MUD, 1));
-            sendChangedHex(c);
+            sendChangedHex(c, boardId);
         }
         return vDesc;
     }
@@ -31987,7 +31895,7 @@ public class TWGameManager extends AbstractGameManager {
                               // ...but don't bother to resolve that if we're
                               // already otherwise destroyed.
                               && !(te.isDestroyed() || te.isDoomed())) {
-                            vDesc.addAll(forceLandVTOLorWiGE(te));
+                            vDesc.addAll(airborneVehicleCrashHandler.forceLandVTOLorWiGE(te));
                         }
                     }
                 }
@@ -32100,7 +32008,7 @@ public class TWGameManager extends AbstractGameManager {
         if (((te.getMovementMode() == EntityMovementMode.WIGE) && (te.isAirborneVTOLorWIGE())) &&
               (te.isMovementHitPending() || (te.getWalkMP() <= 0))) {
             // report problem: add tab
-            vDesc.addAll(crashVTOLorWiGE(te));
+            vDesc.addAll(airborneVehicleCrashHandler.crashVTOLorWiGE(te));
         }
         return vDesc;
     }
@@ -32507,55 +32415,54 @@ public class TWGameManager extends AbstractGameManager {
                         (altitude < effectiveLevel + hex.terrainLevel(Terrains.FUEL_TANK_ELEV))) &&
                   !(asfFlak)) {
                 if (!((ammo != null) && (ammo.getMunitionType().contains(Munitions.M_FLECHETTE)))) {
+                    // An armored building halves the fuel-air blast damage, rounding down, before all other effects
+                    // (IO:AE 3rd printing, p.160). Castle Brian buildings would too, but they are not modelled.
+                    // Armored and light are not mutually exclusive.
+                    int blastDamage = damage;
+                    if (isFuelAirBomb && (bldg.getArmor(coords) > 0)) {
+                        blastDamage = (int) Math.floor(damage * .5);
+
+                        r = new Report(9992);
+                        r.indent(1);
+                        r.subject = subjectId;
+                        r.newlines = 1;
+                        vPhaseReport.addElement(r);
+                    }
+
                     int buildingDamage;
                     if (variableDamage) {
                         // Dropship exhaust? Sayonara, buildings!
-                        buildingDamage = Compute.d6(damage) * 3;
+                        buildingDamage = Compute.d6(blastDamage) * 3;
                     } else {
                         // Central hex damage is determined by AE radius
-                        buildingDamage = damage * ((falloff.radius > 0) ? 3 : 2);
+                        buildingDamage = blastDamage * ((falloff.radius > 0) ? 3 : 2);
                         // Lower damage as distance increases
                         int hDist = coords.distance(attackSource);
                         int vDist = Math.abs(targetLevel - altitude);
                         if (falloff.radius == 0) {
                             // For single-hex AE attacks, damage above and below center is normal damage
                             if (hDist == 0 && vDist == 1) {
-                                buildingDamage = damage;
+                                buildingDamage = blastDamage;
                             }
                         } else {
                             // For multi-hex AE attacks, damage reduces in two stages
                             if (hDist + vDist == 1) {
-                                buildingDamage = damage * 2;
+                                buildingDamage = blastDamage * 2;
                             } else if (hDist + vDist >= 2) {
-                                buildingDamage = damage;
+                                buildingDamage = blastDamage;
                             }
                         }
                     }
 
-                    if (isFuelAirBomb) {
-                        // light buildings take 1.5x damage from fuel-air bombs
-                        if (bldg.getBuildingType() == BuildingType.LIGHT) {
-                            buildingDamage = (int) Math.ceil(buildingDamage * 1.5);
+                    // light buildings take 1.5x damage from fuel-air bombs, rounding up (IO:AE 3rd printing, p.160)
+                    if (isFuelAirBomb && (bldg.getBuildingType() == BuildingType.LIGHT)) {
+                        buildingDamage = (int) Math.ceil(buildingDamage * 1.5);
 
-                            r = new Report(9991);
-                            r.indent(1);
-                            r.subject = killer.getId();
-                            r.newlines = 1;
-                            vPhaseReport.addElement(r);
-                        }
-
-                        // armored and "castle brian" buildings take .5 damage from fuel-air bombs,
-                        // but I have no idea how to determine if a building is a castle or a brian
-                        // note that being armored and being "light" are not mutually exclusive
-                        if (bldg.getArmor(coords) > 0) {
-                            buildingDamage = (int) Math.floor(buildingDamage * .5);
-
-                            r = new Report(9992);
-                            r.indent(1);
-                            r.subject = killer.getId();
-                            r.newlines = 1;
-                            vPhaseReport.addElement(r);
-                        }
+                        r = new Report(9991);
+                        r.indent(1);
+                        r.subject = subjectId;
+                        r.newlines = 1;
+                        vPhaseReport.addElement(r);
                     }
 
                     // damage the building (skip basement damage if no basement has been discovered)
@@ -32728,9 +32635,7 @@ public class TWGameManager extends AbstractGameManager {
             if (hex.getTerrain(Terrains.BLDG_ELEV) != null) {
                 // Get an entity that's near or below the ceiling level
                 // and point the bombs at it.
-                Iterator<Entity> targetEnemies = game.getEnemyEntities(center, killer);
-                while (targetEnemies.hasNext()) {
-                    Entity next = targetEnemies.next();
+                for (Entity next : game.getEnemyEntities(center, targetHex.getBoardId(), killer)) {
                     // Find the enemies in the target hex; if one's on a valid building or
                     // water level, make its elevation the target level.
                     if (next.getElevation() + hex.getLevel() <= hex.ceiling() + 1) {
@@ -32744,6 +32649,7 @@ public class TWGameManager extends AbstractGameManager {
         if (type == BombTypeEnum.FAE_SMALL || type == BombTypeEnum.FAE_LARGE) {
             // pass FAE bombs with the special handler
             alreadyHit = AreaEffectHelper.processFuelAirDamage(center,
+                  targetHex.getBoardId(),
                   targetLevel,
                   (BombType) EquipmentType.get(type.getInternalName()),
                   killer,
@@ -32793,22 +32699,24 @@ public class TWGameManager extends AbstractGameManager {
      * deliver inferno bomb
      *
      * @param coords    the <code>Coords</code> where to deliver
+     * @param boardId   the id of the board the hex is on
      * @param ae        the attacking <code>entity</code>
      * @param subjectId the <code>int</code> id of the target
      */
-    public Vector<Integer> deliverBombInferno(Coords coords, Entity ae, int subjectId, Vector<Report> vPhaseReport) {
-        Hex h = game.getBoard().getHex(coords);
+    public Vector<Integer> deliverBombInferno(Coords coords, int boardId, Entity ae, int subjectId,
+          Vector<Report> vPhaseReport) {
+        Hex h = game.getBoard(boardId).getHex(coords);
         Report r;
         Vector<Integer> alreadyHit = new Vector<>();
         // Unless there is a fire in the hex already, start one.
         if (h.terrainLevel(Terrains.FIRE) < Terrains.FIRE_LVL_INFERNO_BOMB) {
-            ignite(coords, Terrains.FIRE_LVL_INFERNO_BOMB, vPhaseReport);
+            ignite(coords, boardId, Terrains.FIRE_LVL_INFERNO_BOMB, vPhaseReport);
         }
         // possibly melt ice and snow
         if (h.containsTerrain(Terrains.ICE) || h.containsTerrain(Terrains.SNOW)) {
-            vPhaseReport.addAll(meltIceAndSnow(coords, subjectId));
+            vPhaseReport.addAll(meltIceAndSnow(coords, boardId, subjectId));
         }
-        for (Entity entity : game.getEntitiesVector(coords)) {
+        for (Entity entity : game.getEntitiesVector(coords, boardId)) {
             if (entity.isAirborne() || entity.isAirborneVTOLorWIGE()) {
                 continue;
             }

@@ -44,13 +44,13 @@ import static megamek.common.ToHitData.SIDE_RIGHT;
 
 import java.util.List;
 
+import jakarta.annotation.Nullable;
 import megamek.client.ui.Messages;
 import megamek.common.ECMInfo;
 import megamek.common.Hex;
 import megamek.common.LosEffects;
 import megamek.common.PartialCover;
 import megamek.common.ToHitData;
-import megamek.common.annotations.Nullable;
 import megamek.common.compute.Compute;
 import megamek.common.compute.ComputeECM;
 import megamek.common.compute.ComputeSideTable;
@@ -239,12 +239,16 @@ public class ComputeTerrainMods {
 
         // target in water?
         boolean targetInWater = (targetHex != null) && targetHex.containsTerrain(Terrains.WATER);
-        if (PartialCover.isInPartialWater(entityTarget, targetHex, targEl)) {
+        boolean targetInWaterPartialCover = PartialCover.isInPartialWater(entityTarget, targetHex, targEl);
+        if (targetInWaterPartialCover) {
             los.setTargetCover(los.getTargetCover() | LosEffects.COVER_HORIZONTAL);
         }
 
+        // Skips partial cover if using semi-guided direct against a tagged target and not in water partial cover.
+        boolean semiguidedNoWater = semiGuidedDirectVsTaggedTarget && !targetInWaterPartialCover;
+
         // Change hit table for partial cover, accommodate for partial underwater (legs)
-        if (los.getTargetCover() != LosEffects.COVER_NONE && !(semiGuidedDirectVsTaggedTarget && !underWater)) {
+        if (los.getTargetCover() != LosEffects.COVER_NONE && !semiguidedNoWater) {
             if (underWater && (targetInWater && (targEl == 0) && (entityTarget != null && entityTarget.height() > 0))) {
                 // weapon underwater, target in partial water
                 toHit.setHitTable(HIT_PARTIAL_COVER);

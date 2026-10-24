@@ -35,24 +35,16 @@ package megamek.common.loaders;
 
 import static megamek.common.bays.Bay.UNSET_BAY;
 
-import java.awt.*;
+import java.awt.Color;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.StringTokenizer;
-import java.util.Vector;
+import java.util.*;
 import java.util.zip.GZIPInputStream;
 import javax.xml.parsers.DocumentBuilder;
 
+import jakarta.annotation.Nullable;
 import megamek.SuiteConstants;
 import megamek.Version;
 import megamek.client.generator.RandomNameGenerator;
@@ -60,7 +52,6 @@ import megamek.codeUtilities.MathUtility;
 import megamek.codeUtilities.StringUtility;
 import megamek.common.CriticalSlot;
 import megamek.common.OffBoardDirection;
-import megamek.common.annotations.Nullable;
 import megamek.common.battleArmor.BattleArmor;
 import megamek.common.battlefieldSupport.BattlefieldSupportAsset;
 import megamek.common.battlefieldSupport.OverlayStyle;
@@ -125,6 +116,7 @@ public class MULParser {
     public static final String ELE_SAIL = "sail";
     public static final String ELE_AERO_CRIT = "acriticals";
     public static final String ELE_DROP_CRIT = "dcriticals";
+    public static final String ELE_JUMPSHIP_CRIT = "jcriticals";
     public static final String ELE_TANK_CRIT = "tcriticals";
     public static final String ELE_STABILIZER = "stabilizer";
     public static final String ELE_BREACH = "breached";
@@ -190,6 +182,13 @@ public class MULParser {
     public static final String ATTR_GUNNERY_B = "gunneryB";
     public static final String ATTR_PILOTING = "piloting";
     public static final String ATTR_ARTILLERY = "artillery";
+    public static final String ATTR_NATURAL_APTITUDE_GUNNERY = "naturalAptitudeGunnery";
+    public static final String ATTR_NATURAL_APTITUDE_ARTILLERY = "naturalAptitudeArtillery";
+    public static final String ATTR_NATURAL_APTITUDE_PILOTING = "naturalAptitudePiloting";
+    public static final String ATTR_NATURAL_APTITUDE_SMALL_ARMS = "naturalAptitudeSmallArms";
+    // The retired Natural Aptitude SPAs, still found in the advantages of older unit lists
+    private static final String LEGACY_NATURAL_APTITUDE_GUNNERY = "aptitude_gunnery";
+    private static final String LEGACY_NATURAL_APTITUDE_PILOTING = "aptitude_piloting";
     public static final String ATTR_TOUGH = "toughness";
     public static final String ATTR_FATIGUE = "fatigue";
     public static final String ATTR_INIT_B = "initB";
@@ -268,6 +267,14 @@ public class MULParser {
     public static final String ATTR_GEAR = "gear";
     public static final String ATTR_DOCKING_COLLAR = "dockingcollar";
     public static final String ATTR_KF_BOOM = "kfboom";
+    public static final String ATTR_KF_HELIUM_TANK = "kfHeliumTank";
+    public static final String ATTR_KF_DRIVE_COIL = "kfDriveCoil";
+    public static final String ATTR_KF_FIELD_INITIATOR = "kfFieldInitiator";
+    public static final String ATTR_KF_CHARGING_SYSTEM = "kfChargingSystem";
+    public static final String ATTR_KF_DRIVE_CONTROLLER = "kfDriveController";
+    public static final String ATTR_LF_BATTERY = "lfBattery";
+    public static final String ATTR_DAMAGED_GRAV_DECKS = "damagedGravDecks";
+    public static final String ATTR_DAMAGED_DOCKING_COLLARS = "damagedDockingCollars";
     public static final String ATTR_WEAPONS_BAY_INDEX = "weaponsBayIndex";
     public static final String ATTR_DAMAGE = "damage";
     public static final String ATTR_PENALTY = "penalty";
@@ -294,6 +301,9 @@ public class MULParser {
     public static final String ATTR_SNEAK_CAMO = "sneakCamo";
     public static final String ATTR_SNEAK_IR = "sneakIR";
     public static final String ATTR_SNEAK_ECM = "sneakECM";
+    public static final String ATTR_SRM_MUNITION = "srmMunition";
+    public static final String VALUE_SRM_MUNITION_STANDARD = "Standard";
+    public static final String VALUE_SRM_MUNITION_INFERNO = "Inferno";
     public static final String ATTR_INF_SPEC = "infantrySpecializations";
     public static final String ATTR_DISPOSABLE_WEAPON = "disposableWeapon";
     public static final String ATTR_DISPOSABLE_WEAPON_FIRED = "disposableWeaponFired";
@@ -314,6 +324,8 @@ public class MULParser {
     public static final String ATTR_GUNNERY_AERO_M = "gunneryAeroM";
     public static final String ATTR_GUNNERY_AERO_B = "gunneryAeroB";
     public static final String ATTR_PILOTING_AERO = "pilotingAero";
+    public static final String ATTR_NATURAL_APTITUDE_GUNNERY_AERO = "naturalAptitudeGunneryAero";
+    public static final String ATTR_NATURAL_APTITUDE_PILOTING_AERO = "naturalAptitudePilotingAero";
     public static final String ATTR_CREW_TYPE = "crewType";
     public static final String ATTR_FILENAME = "filename";
 
@@ -781,6 +793,8 @@ public class MULParser {
                     parseAeroCrit(currEle, entity);
                 } else if (nodeName.equalsIgnoreCase(ELE_DROP_CRIT)) {
                     parseDropCrit(currEle, entity);
+                } else if (nodeName.equalsIgnoreCase(ELE_JUMPSHIP_CRIT)) {
+                    parseJumpshipCrit(currEle, entity);
                 } else if (nodeName.equalsIgnoreCase(ELE_TANK_CRIT)) {
                     parseTankCrit(currEle, entity);
                 } else if (nodeName.equalsIgnoreCase(ELE_BOMBS)) {
@@ -839,9 +853,15 @@ public class MULParser {
         if (!StringUtility.isNullOrBlank(unitFileUUID)) {
             MekSummary ms = MekSummaryCache.getInstance().getByUnitFileUUID(unitFileUUID);
             if (ms != null) {
+                MekSummary namedSummary = chassis.isBlank() ? null : findSummaryByName(chassis, model, assetForm);
                 if (!summaryMatchesEntityForm(ms, assetForm)) {
                     warning.append("Unit UUID ").append(unitFileUUID)
                           .append(" does not identify a Battlefield Support Asset.\n");
+                } else if (nameIdentifiesOtherUnit(ms, namedSummary)) {
+                    // Older custom unit files (such as MekHQ refits) could share their UUID with the design they were
+                    // made from. When the saved name identifies a different unit than the UUID does, trust the name.
+                    LOGGER.info("Unit UUID {} identifies {}, but the entry is named {}; loading it by name.",
+                          unitFileUUID, ms.getName(), namedSummary.getName());
                 } else {
                     try {
                         return new MekFileParser(ms.getSourceFile(), ms.getEntryName()).getEntity();
@@ -879,21 +899,7 @@ public class MULParser {
             warning.append("Could not find chassis for Entity.\n");
         } else {
             // Try to find the entity.
-            StringBuilder key = new StringBuilder(chassis);
-            MekSummary ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
-                  : MekSummaryCache.getInstance().getMek(key.toString());
-            if (!StringUtility.isNullOrBlank(model)) {
-                key.append(" ").append(model);
-                ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
-                      : MekSummaryCache.getInstance().getMek(key.toString());
-                // That didn't work. Try swapping model and chassis.
-                if (ms == null) {
-                    key = new StringBuilder(model);
-                    key.append(" ").append(chassis);
-                    ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
-                          : MekSummaryCache.getInstance().getMek(key.toString());
-                }
-            }
+            MekSummary ms = findSummaryByName(chassis, model, assetForm);
             // We should have found the mek.
             if (ms == null) {
                 warning.append("Could not find Entity with chassis: ").append(chassis);
@@ -919,6 +925,61 @@ public class MULParser {
 
     static boolean summaryMatchesEntityForm(MekSummary summary, boolean assetForm) {
         return !assetForm || summary.isBattlefieldSupportAsset();
+    }
+
+    /**
+     * Looks a unit up in the cache by chassis and model, trying the chassis alone, then chassis and model, then model
+     * and chassis swapped.
+     *
+     * @param chassis   the unit chassis
+     * @param model     the unit model, or {@code null}
+     * @param assetForm whether to look in the Battlefield Support Asset name index
+     *
+     * @return the matching summary, or {@code null} if none was found
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private static @Nullable MekSummary findSummaryByName(String chassis, @Nullable String model, boolean assetForm) {
+        StringBuilder key = new StringBuilder(chassis);
+        MekSummary ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
+              : MekSummaryCache.getInstance().getMek(key.toString());
+        if (!StringUtility.isNullOrBlank(model)) {
+            key.append(" ").append(model);
+            ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
+                  : MekSummaryCache.getInstance().getMek(key.toString());
+            // That didn't work. Try swapping model and chassis.
+            if (ms == null) {
+                key = new StringBuilder(model);
+                key.append(" ").append(chassis);
+                ms = assetForm ? MekSummaryCache.getInstance().getAsset(key.toString())
+                      : MekSummaryCache.getInstance().getMek(key.toString());
+            }
+        }
+        return ms;
+    }
+
+    /**
+     * Whether a MUL entry's chassis and model identify a different unit file than its unit-file UUID does. The UUID
+     * normally wins, so a unit renamed since the MUL was written still loads; but when the saved name matches some
+     * other unit file, the UUID is a stale or shared one (for example a custom refit that kept its source design's
+     * UUID) and the named unit is the one the MUL meant.
+     *
+     * @param uuidSummary  the summary found by unit-file UUID
+     * @param namedSummary the summary found by chassis and model, or {@code null} if the name matches nothing
+     *
+     * @return {@code true} if the name lookup found a different unit file than the UUID lookup
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    static boolean nameIdentifiesOtherUnit(MekSummary uuidSummary, @Nullable MekSummary namedSummary) {
+        // An asset shares its name with its base unit, so for an asset the name never outranks the UUID
+        if ((namedSummary == null) || uuidSummary.isBattlefieldSupportAsset()) {
+            return false;
+        }
+        return !Objects.equals(uuidSummary.getSourceFile(), namedSummary.getSourceFile())
+              || !Objects.equals(uuidSummary.getEntryName(), namedSummary.getEntryName());
     }
 
     /**
@@ -1206,6 +1267,13 @@ public class MULParser {
                 inf.setSpecializations(Integer.parseInt(infSpec));
             }
 
+            // Without the attribute, the platoon keeps the default from its unit file: Inferno when the file names a
+            // withdrawn Inferno SRM launcher, standard otherwise.
+            String srmMunition = entityTag.getAttribute(ATTR_SRM_MUNITION);
+            if (!srmMunition.isBlank()) {
+                inf.setInfernoSrmsDeclared(srmMunition.equalsIgnoreCase(VALUE_SRM_MUNITION_INFERNO));
+            }
+
             // Disposable Weapon (TO:AuE p.116, Corrected Sixth Printing): the design's weapons are re-derived from the
             // cache, but the disposable is not part of that, so restore it (and whether it was already fired) from the
             // saved attributes. A platoon carries at most one Disposable Weapon - equipDisposableWeapon() replaces any
@@ -1285,6 +1353,16 @@ public class MULParser {
             ((LAMPilot) crew).setGunneryAeroB(aeroCrew.getGunneryB());
             ((LAMPilot) crew).setGunneryAeroL(aeroCrew.getGunneryL());
             ((LAMPilot) crew).setPilotingAero(aeroCrew.getPiloting());
+            // convertToLAMPilot copies the Mek aptitudes to Aero, which is what we want for files written before the
+            // Aero aptitudes were saved separately
+            if (attributes.containsKey(ATTR_NATURAL_APTITUDE_GUNNERY_AERO)) {
+                ((LAMPilot) crew).setHasNaturalAptitudeGunneryAero(
+                      parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_GUNNERY_AERO));
+            }
+            if (attributes.containsKey(ATTR_NATURAL_APTITUDE_PILOTING_AERO)) {
+                ((LAMPilot) crew).setHasNaturalAptitudePilotingAero(
+                      parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_PILOTING_AERO));
+            }
             entity.setCrew(crew);
         }
         pilots.add(crew);
@@ -1367,6 +1445,84 @@ public class MULParser {
     }
 
     /**
+     * @return {@code true} if the attribute is present and set to {@code true}
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private static boolean parseBooleanAttribute(final Map<String, String> attributes, final String key) {
+        return attributes.containsKey(key) && Boolean.parseBoolean(attributes.get(key));
+    }
+
+    /**
+     * Reads a crew member's Natural Aptitudes. Absent attributes are left alone rather than cleared, so a legacy SPA
+     * converted by {@link #convertLegacyNaturalAptitudes(Crew, Map)} isn't undone regardless of which runs first.
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private static void setNaturalAptitudeAttributes(final Crew crew, final int slot,
+          final Map<String, String> attributes) {
+        if (attributes.containsKey(ATTR_NATURAL_APTITUDE_GUNNERY)) {
+            crew.setHasNaturalAptitudeGunnery(parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_GUNNERY), slot);
+        }
+        if (attributes.containsKey(ATTR_NATURAL_APTITUDE_ARTILLERY)) {
+            crew.setHasNaturalAptitudeArtillery(parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_ARTILLERY),
+                  slot);
+        }
+        if (attributes.containsKey(ATTR_NATURAL_APTITUDE_PILOTING)) {
+            crew.setHasNaturalAptitudePiloting(parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_PILOTING),
+                  slot);
+        }
+        if (attributes.containsKey(ATTR_NATURAL_APTITUDE_SMALL_ARMS)) {
+            crew.setHasNaturalAptitudeSmallArms(parseBooleanAttribute(attributes, ATTR_NATURAL_APTITUDE_SMALL_ARMS),
+                  slot);
+        }
+    }
+
+    /**
+     * @return {@code true} if the advantage name is one of the retired Natural Aptitude SPAs
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private static boolean isLegacyNaturalAptitude(final String advantageName) {
+        return LEGACY_NATURAL_APTITUDE_GUNNERY.equals(advantageName)
+              || LEGACY_NATURAL_APTITUDE_PILOTING.equals(advantageName);
+    }
+
+    /**
+     * Natural Aptitude used to be a pair of SPAs. Files written before it became a property of the crew's skills
+     * store it in the advantages list instead; convert those into the new crew flags. The old Gunnery SPA applied to
+     * every gunnery roll, including artillery, so it grants both the Gunnery and Artillery aptitudes. SPAs were held
+     * by the crew as a whole, so every crew member receives the aptitude.
+     *
+     * <p>This is done regardless of whether pilot advantages are enabled, as Natural Aptitude is no longer an
+     * SPA.</p>
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private static void convertLegacyNaturalAptitudes(final Crew crew, final Map<String, String> attributes) {
+        if (!attributes.containsKey(ATTR_ADVANTAGES) || attributes.get(ATTR_ADVANTAGES).isBlank()) {
+            return;
+        }
+
+        StringTokenizer st = new StringTokenizer(attributes.get(ATTR_ADVANTAGES), "::");
+        while (st.hasMoreTokens()) {
+            String advantageName = Crew.parseAdvantageName(st.nextToken());
+            for (int slot = 0; slot < crew.getSlotCount(); slot++) {
+                if (LEGACY_NATURAL_APTITUDE_GUNNERY.equals(advantageName)) {
+                    crew.setHasNaturalAptitudeGunnery(true, slot);
+                    crew.setHasNaturalAptitudeArtillery(true, slot);
+                } else if (LEGACY_NATURAL_APTITUDE_PILOTING.equals(advantageName)) {
+                    crew.setHasNaturalAptitudePiloting(true, slot);
+                }
+            }
+        }
+    }
+
+    /**
      * Helper method that sets field values for the crew as a whole, either from a
      * <pilot> element
      * (single/collective crews) or a <crew> element (multi-crew cockpits). If an
@@ -1434,6 +1590,8 @@ public class MULParser {
         crew.setInitBonus(initBVal);
         crew.setCommandBonus(commandBVal);
 
+        convertLegacyNaturalAptitudes(crew, attributes);
+
         if ((options != null) && options.booleanOption(OptionsConstants.RPG_PILOT_ADVANTAGES)
               && attributes.containsKey(ATTR_ADVANTAGES) && !attributes.get(ATTR_ADVANTAGES).isBlank()) {
             StringTokenizer st = new StringTokenizer(attributes.get(ATTR_ADVANTAGES), "::");
@@ -1441,6 +1599,11 @@ public class MULParser {
                 String adv = st.nextToken();
                 String advName = Crew.parseAdvantageName(adv);
                 Object value = Crew.parseAdvantageValue(adv);
+
+                if (isLegacyNaturalAptitude(advName)) {
+                    // Handled by convertLegacyNaturalAptitudes
+                    continue;
+                }
 
                 try {
                     crew.getOptions().getOption(advName).setValue(value);
@@ -1633,6 +1796,36 @@ public class MULParser {
     }
 
     /**
+     * Parses a crew skill attribute. A skill outside 0 to {@link Crew#MAX_SKILL} is clamped into that range rather than
+     * rejected, so that one out-of-range skill doesn't discard the rest of the crew's details (name, skills, etc.).
+     *
+     * @param rawValue      the attribute value as written in the file
+     * @param attributeName the attribute name, used in the warning message
+     *
+     * @return the clamped skill value, or {@code null} if the value isn't a number
+     *
+     * @author Illiani
+     * @since 0.51.01
+     */
+    private @Nullable Integer parseCrewSkill(final String rawValue, final String attributeName) {
+        final int skillValue;
+        try {
+            skillValue = Integer.parseInt(rawValue);
+        } catch (NumberFormatException ignored) {
+            warning.append("Found invalid ").append(attributeName).append(" value: ").append(rawValue).append(".\n");
+            return null;
+        }
+
+        if ((skillValue < 0) || (skillValue > Crew.MAX_SKILL)) {
+            warning.append("Found out of range ").append(attributeName).append(" value: ").append(rawValue)
+                  .append(", clamping it to the valid range.\n");
+            return Math.clamp(skillValue, 0, Crew.MAX_SKILL);
+        }
+
+        return skillValue;
+    }
+
+    /**
      * Helper method that parses attributes common to both single/collective crews and individual slots of a unit with a
      * multi-crew cockpit.
      *
@@ -1656,17 +1849,11 @@ public class MULParser {
             // Try to get a good gunnery value.
             int gunVal = -1;
             if (hasGun) {
-                try {
-                    gunVal = Integer.parseInt(attributes.get(ATTR_GUNNERY));
-                } catch (NumberFormatException ignored) {
-
-                }
-
-                if ((gunVal < 0) || (gunVal > Crew.MAX_SKILL)) {
-                    warning.append("Found invalid gunnery value: ")
-                          .append(attributes.get(ATTR_GUNNERY)).append(".\n");
+                Integer parsedGunnery = parseCrewSkill(attributes.get(ATTR_GUNNERY), ATTR_GUNNERY);
+                if (parsedGunnery == null) {
                     return;
                 }
+                gunVal = parsedGunnery;
             }
 
             // get RPG skills
@@ -1674,47 +1861,15 @@ public class MULParser {
             int gunneryMVal = -1;
             int gunneryBVal = -1;
             if (hasRpgGun) {
-                if ((attributes.containsKey(ATTR_GUNNERY_L)) && !attributes.get(ATTR_GUNNERY_L).isBlank()) {
-                    try {
-                        gunneryLVal = Integer.parseInt(attributes.get(ATTR_GUNNERY_L));
-                    } catch (NumberFormatException ignored) {
-
-                    }
-
-                    if ((gunneryLVal < 0) || (gunneryLVal > Crew.MAX_SKILL)) {
-                        warning.append("Found invalid piloting value: ")
-                              .append(attributes.get(ATTR_GUNNERY_L)).append(".\n");
-                        return;
-                    }
+                Integer parsedGunneryL = parseCrewSkill(attributes.get(ATTR_GUNNERY_L), ATTR_GUNNERY_L);
+                Integer parsedGunneryM = parseCrewSkill(attributes.get(ATTR_GUNNERY_M), ATTR_GUNNERY_M);
+                Integer parsedGunneryB = parseCrewSkill(attributes.get(ATTR_GUNNERY_B), ATTR_GUNNERY_B);
+                if ((parsedGunneryL == null) || (parsedGunneryM == null) || (parsedGunneryB == null)) {
+                    return;
                 }
-
-                if ((attributes.containsKey(ATTR_GUNNERY_M)) && !attributes.get(ATTR_GUNNERY_M).isBlank()) {
-                    try {
-                        gunneryMVal = Integer.parseInt(attributes.get(ATTR_GUNNERY_M));
-                    } catch (NumberFormatException ignored) {
-
-                    }
-
-                    if ((gunneryMVal < 0) || (gunneryMVal > Crew.MAX_SKILL)) {
-                        warning.append("Found invalid piloting value: ")
-                              .append(attributes.get(ATTR_GUNNERY_M)).append(".\n");
-                        return;
-                    }
-                }
-
-                if ((attributes.containsKey(ATTR_GUNNERY_B)) && !attributes.get(ATTR_GUNNERY_B).isBlank()) {
-                    try {
-                        gunneryBVal = Integer.parseInt(attributes.get(ATTR_GUNNERY_B));
-                    } catch (NumberFormatException ignored) {
-
-                    }
-
-                    if ((gunneryBVal < 0) || (gunneryBVal > Crew.MAX_SKILL)) {
-                        warning.append("Found invalid piloting value: ")
-                              .append(attributes.get(ATTR_GUNNERY_B)).append(".\n");
-                        return;
-                    }
-                }
+                gunneryLVal = parsedGunneryL;
+                gunneryMVal = parsedGunneryM;
+                gunneryBVal = parsedGunneryB;
             }
 
             if (!hasGun) {
@@ -1726,18 +1881,11 @@ public class MULParser {
             }
 
             // Try to get a good piloting value.
-            int pilotVal = -1;
-            try {
-                pilotVal = Integer.parseInt(attributes.get(ATTR_PILOTING));
-            } catch (NumberFormatException ignored) {
-
-            }
-
-            if ((pilotVal < 0) || (pilotVal > Crew.MAX_SKILL)) {
-                warning.append("Found invalid piloting value: ")
-                      .append(attributes.get(ATTR_PILOTING)).append(".\n");
+            Integer parsedPiloting = parseCrewSkill(attributes.get(ATTR_PILOTING), ATTR_PILOTING);
+            if (parsedPiloting == null) {
                 return;
             }
+            int pilotVal = parsedPiloting;
 
             // toughness
             int toughVal = 0;
@@ -1764,15 +1912,9 @@ public class MULParser {
             int artVal = gunVal;
             if ((options != null) && options.booleanOption(OptionsConstants.RPG_ARTILLERY_SKILL)
                   && (attributes.containsKey(ATTR_ARTILLERY)) && !attributes.get(ATTR_ARTILLERY).isBlank()) {
-                try {
-                    artVal = Integer.parseInt(attributes.get(ATTR_ARTILLERY));
-                } catch (NumberFormatException ignored) {
-
-                }
-                if ((artVal < 0) || (artVal > Crew.MAX_SKILL)) {
-                    warning.append("Found invalid artillery value: ")
-                          .append(attributes.get(ATTR_ARTILLERY)).append(".\n");
-                    return;
+                Integer parsedArtillery = parseCrewSkill(attributes.get(ATTR_ARTILLERY), ATTR_ARTILLERY);
+                if (parsedArtillery != null) {
+                    artVal = parsedArtillery;
                 }
             }
 
@@ -1784,6 +1926,7 @@ public class MULParser {
             crew.setPiloting(pilotVal, slot);
             crew.setToughness(toughVal, slot);
             crew.setCrewFatigue(fatigueVal, slot);
+            setNaturalAptitudeAttributes(crew, slot, attributes);
 
             if ((attributes.containsKey(ATTR_NAME)) && !attributes.get(ATTR_NAME).isBlank()) {
                 crew.setName(attributes.get(ATTR_NAME), slot);
@@ -2585,6 +2728,70 @@ public class MULParser {
         if (!kfBoom.isBlank()) {
             d.setDamageKFBoom(true);
         }
+    }
+
+    /**
+     * Restores the damage a JumpShip, WarShip or space station carries beyond its integrity values: K-F drive
+     * component and L-F battery hits, and damaged grav decks and docking collars.
+     */
+    private void parseJumpshipCrit(Element jumpshipCritTag, Entity entity) {
+        if (!(entity instanceof Jumpship jumpship)) {
+            warning.append("Found JumpShip damage for ").append(entity.getShortName())
+                  .append(", which is not a JumpShip.\n");
+            return;
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_KF_HELIUM_TANK)) {
+            jumpship.setKFHeliumTankHit(true);
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_KF_DRIVE_COIL)) {
+            jumpship.setKFDriveCoilHit(true);
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_KF_FIELD_INITIATOR)) {
+            jumpship.setKFFieldInitiatorHit(true);
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_KF_CHARGING_SYSTEM)) {
+            jumpship.setKFChargingSystemHit(true);
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_KF_DRIVE_CONTROLLER)) {
+            jumpship.setKFDriveControllerHit(true);
+        }
+        if (isHitListed(jumpshipCritTag, ATTR_LF_BATTERY)) {
+            jumpship.setLFBatteryHit(true);
+        }
+        for (int deckIndex : parseNumberList(jumpshipCritTag.getAttribute(ATTR_DAMAGED_GRAV_DECKS))) {
+            jumpship.setGravDeckDamageFlag(deckIndex, 1);
+        }
+        for (int collarNumber : parseNumberList(jumpshipCritTag.getAttribute(ATTR_DAMAGED_DOCKING_COLLARS))) {
+            DockingCollar collar = jumpship.getCollarById(collarNumber);
+            if (collar == null) {
+                warning.append("No docking collar ").append(collarNumber).append(" on ")
+                      .append(entity.getShortName()).append(".\n");
+            } else {
+                collar.setDamaged(true);
+            }
+        }
+    }
+
+    private static boolean isHitListed(Element critTag, String attribute) {
+        return !critTag.getAttribute(attribute).isBlank();
+    }
+
+    /**
+     * @return the numbers in a comma-separated list; any entry that is not a number is skipped with a warning
+     */
+    private List<Integer> parseNumberList(String numbers) {
+        List<Integer> parsedNumbers = new ArrayList<>();
+        if (numbers.isBlank()) {
+            return parsedNumbers;
+        }
+        for (String number : numbers.split(",")) {
+            try {
+                parsedNumbers.add(Integer.parseInt(number.trim()));
+            } catch (NumberFormatException exception) {
+                warning.append("Skipped \"").append(number).append("\" in a list of numbers.\n");
+            }
+        }
+        return parsedNumbers;
     }
 
     /**

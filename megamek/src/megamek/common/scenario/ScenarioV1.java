@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2004-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -35,6 +35,7 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jakarta.annotation.Nullable;
 import megamek.client.generator.RandomGenderGenerator;
 import megamek.codeUtilities.MathUtility;
 import megamek.common.Configuration;
@@ -44,7 +45,6 @@ import megamek.common.Player;
 import megamek.common.SimpleTechLevel;
 import megamek.common.TechConstants;
 import megamek.common.ToHitData;
-import megamek.common.annotations.Nullable;
 import megamek.common.battleArmor.BattleArmor;
 import megamek.common.board.Board;
 import megamek.common.board.Coords;
@@ -820,7 +820,10 @@ public class ScenarioV1 extends HashMap<String, Collection<String>> implements S
                       parts[1],
                       1,
                       Integer.parseInt(parts[2]),
+                      entity.getCrew().isHasNaturalAptitudeGunnery(),
+                      entity.getCrew().isHasNaturalAptitudeArtillery(),
                       Integer.parseInt(parts[3]),
+                      entity.getCrew().isHasNaturalAptitudePiloting(),
                       Gender.parseFromString(parts[4]),
                       Boolean.parseBoolean(parts[5]),
                       null));
@@ -831,7 +834,10 @@ public class ScenarioV1 extends HashMap<String, Collection<String>> implements S
                       parts[1],
                       1,
                       Integer.parseInt(parts[2]),
+                      entity.getCrew().isHasNaturalAptitudeGunnery(),
+                      entity.getCrew().isHasNaturalAptitudeArtillery(),
                       Integer.parseInt(parts[3]),
+                      entity.getCrew().isHasNaturalAptitudePiloting(),
                       RandomGenderGenerator.generate(),
                       entity.isClan(),
                       null));

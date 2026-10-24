@@ -229,10 +229,6 @@ class BotClientEmptyMoveFallbackTest {
         }
 
         @Override
-        protected void calculateInfantryVsInfantryCombatTurn() {
-        }
-
-        @Override
         protected MovePath continueMovementFor(Entity entity) {
             return null;
         }

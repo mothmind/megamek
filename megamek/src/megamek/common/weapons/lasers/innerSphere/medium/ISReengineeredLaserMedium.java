@@ -36,8 +36,8 @@ package megamek.common.weapons.lasers.innerSphere.medium;
 
 import java.io.Serial;
 
-import megamek.common.SourceBookCode;
 import megamek.common.SimpleTechLevel;
+import megamek.common.SourceBookCode;
 import megamek.common.enums.AvailabilityValue;
 import megamek.common.enums.Faction;
 import megamek.common.enums.TechBase;
@@ -76,7 +76,8 @@ public class ISReengineeredLaserMedium extends ReengineeredLaserWeapon {
         cost = 100000;
         shortAV = 6;
         maxRange = RANGE_SHORT;
-        rulesRefs = rulesRefs(SourceBookCode.IO_AE, 83);
+        rulesRefs = rulesRefs(rulesRef(SourceBookCode.IO_AE, 83),
+                              rulesRef(SourceBookCode.CORE, 185));
         // Tech Progression tweaked to combine IntOps with TRO Prototypes/3145 NTNU RS
         techAdvancement.setTechBase(TechBase.IS)
               .setTechRating(TechRating.E)

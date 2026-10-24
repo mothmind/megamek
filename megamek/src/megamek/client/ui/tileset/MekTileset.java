@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2000-2002 - Ben Mazur (bmazur@sev.org)
  * Copyright (c) 2013 - Edward Cullen (eddy@obsessedcomputers.co.uk)
- * Copyright (C) 2002-2025 The MegaMek Team. All Rights Reserved.
+ * Copyright (C) 2002-2026 The MegaMek Team. All Rights Reserved.
  *
  * This file is part of MegaMek.
  *
@@ -285,27 +285,27 @@ public class MekTileset {
         } else if (entity instanceof GunEmplacement) {
             return default_gun_emplacement;
         } else if (entity instanceof Tank) {
-            switch (entity.getMovementMode()) {
-                case WHEELED:
-                    if (entity.getWeightClass() == EntityWeightClass.WEIGHT_HEAVY) {
-                        return default_wheeled_heavy;
-                    } else {
-                        return default_wheeled;
+            return switch (entity.getMovementMode()) {
+                case WHEELED -> {
+                    if (entity.getWeightClass() >= EntityWeightClass.WEIGHT_HEAVY) {
+                        yield default_wheeled_heavy;
                     }
-                case HOVER:
-                    return default_hover;
-                case VTOL:
-                    return default_vtol;
-                case WIGE:
-                    return default_wige;
-                case TRACKED:
-                default:
-                    return switch (entity.getWeightClass()) {
-                        case EntityWeightClass.WEIGHT_HEAVY -> default_tracked_heavy;
-                        case EntityWeightClass.WEIGHT_ASSAULT -> default_tracked_assault;
-                        default -> default_tracked;
-                    };
-            }
+
+                    yield default_wheeled;
+                }
+                case HOVER -> default_hover;
+                case VTOL -> default_vtol;
+                case WIGE -> default_wige;
+                default -> {
+                    if (entity.getWeightClass() >= EntityWeightClass.WEIGHT_ASSAULT) {
+                        yield default_tracked_assault;
+                    } else if (entity.getWeightClass() == EntityWeightClass.WEIGHT_HEAVY) {
+                        yield default_tracked_heavy;
+                    }
+
+                    yield default_tracked;
+                }
+            };
         } else if (entity instanceof Aero) {
             switch (entity) {
                 case SpaceStation ignored -> {
@@ -393,9 +393,11 @@ public class MekTileset {
                             LOGGER.error("... failed: {}.", e.getMessage(), e);
                         }
                     } else if (tokens.getFirst().equals(CHASSIS_KEY)) {
-                        chassis.put(tokens.get(1).toUpperCase(Locale.ROOT), new MekEntry(tokens.get(2)));
+                        chassis.put(tokens.get(1).toUpperCase(Locale.ROOT),
+                              new MekEntry(tokens.get(2), tokens.size() == 4 ? tokens.get(3) : null));
                     } else {
-                        exact.put(tokens.get(1).toUpperCase(Locale.ROOT), new MekEntry(tokens.get(2)));
+                        exact.put(tokens.get(1).toUpperCase(Locale.ROOT),
+                              new MekEntry(tokens.get(2), tokens.size() == 4 ? tokens.get(3) : null));
                     }
                 } else {
                     LOGGER.warn("Malformed line in {}: {}", filename, tokens.toString());
@@ -469,10 +471,16 @@ public class MekTileset {
      */
     public class MekEntry {
         private final String imageFile;
+        private final String modelFile;
         private Image image;
 
         public MekEntry(String imageFile) {
+            this(imageFile, null);
+        }
+
+        public MekEntry(String imageFile, String modelFile) {
             this.imageFile = imageFile;
+            this.modelFile = modelFile;
             image = null;
         }
 
@@ -490,6 +498,10 @@ public class MekTileset {
 
         public String getImageFile() {
             return imageFile;
+        }
+
+        public String getModelFile() {
+            return modelFile;
         }
 
     }

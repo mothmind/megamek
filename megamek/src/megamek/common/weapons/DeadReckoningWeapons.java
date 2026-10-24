@@ -18,8 +18,8 @@
  */
 package megamek.common.weapons;
 
+import jakarta.annotation.Nullable;
 import megamek.common.RangeType;
-import megamek.common.annotations.Nullable;
 import megamek.common.equipment.Mounted;
 import megamek.common.game.Game;
 import megamek.common.options.OptionsConstants;

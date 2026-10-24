@@ -414,8 +414,8 @@ public class ArtilleryWeaponDistantFireHandler extends AmmoWeaponHandler {
 
         if (ammoType.getMunitionType().contains(Munitions.M_FAE)) {
             handleArtilleryDriftMarker(targetPos, finalPos, artilleryAttackAction,
-                  AreaEffectHelper.processFuelAirDamage(
-                        finalPos, height, ammoType, artilleryAttackAction.getEntity(game), vPhaseReport, gameManager));
+                  AreaEffectHelper.processFuelAirDamage(finalPos, target.getBoardId(), height, ammoType,
+                        artilleryAttackAction.getEntity(game), vPhaseReport, gameManager));
             return false;
         }
 
@@ -430,7 +430,7 @@ public class ArtilleryWeaponDistantFireHandler extends AmmoWeaponHandler {
             } else {
                 radius = 1;
             }
-            gameManager.deliverArtilleryFlare(finalPos, radius);
+            gameManager.deliverArtilleryFlare(finalPos, target.getBoardId(), radius);
             return false;
         }
         if (ammoType.getMunitionType().contains(Munitions.M_DAVY_CROCKETT_M)) {

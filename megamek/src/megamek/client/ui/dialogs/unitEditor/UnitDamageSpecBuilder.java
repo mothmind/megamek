@@ -33,10 +33,12 @@
 package megamek.client.ui.dialogs.unitEditor;
 
 import java.util.Map;
-import javax.swing.*;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JSpinner;
 
+import jakarta.annotation.Nullable;
 import megamek.client.ui.buttons.StateToggleButton;
-import megamek.common.annotations.Nullable;
 import megamek.common.equipment.EquipmentMode;
 import megamek.common.units.DamageEditSpec;
 import megamek.common.units.Entity;
@@ -113,6 +115,18 @@ public class UnitDamageSpecBuilder {
             spec.initiativeRounds = (Integer) controls.spnInitiativeRounds.getValue();
             spec.initiativePermanent = controls.chkInitiativePermanent.isSelected();
         }
+        spec.targetModifier = spinnerValue(controls.spnTargetModifier);
+
+        // ejection settings; the lobby's box reads "Disable", so the master switch travels inverted
+        Boolean autoEjectDisabled = checkboxValue(controls.chkAutoEjectDisabled);
+        spec.autoEject = (autoEjectDisabled == null) ? null : !autoEjectDisabled;
+        spec.conditionalEjectOnAmmoExplosion = checkboxValue(controls.chkConditionalEjectAmmo);
+        spec.conditionalEjectOnEngineExplosion = checkboxValue(controls.chkConditionalEjectEngine);
+        spec.conditionalEjectOnCenterTorsoDestroyed = checkboxValue(controls.chkConditionalEjectCenterTorso);
+        spec.conditionalEjectOnHeadshot = checkboxValue(controls.chkConditionalEjectHeadshot);
+        spec.conditionalEjectOnFuelExplosion = checkboxValue(controls.chkConditionalEjectFuel);
+        spec.conditionalEjectOnStructuralIntegrityDestroyed =
+              checkboxValue(controls.chkConditionalEjectStructuralIntegrity);
 
         spec.centerEngineHits = critHits(controls.centerEngineCrit);
         spec.leftEngineHits = critHits(controls.leftEngineCrit);
@@ -183,11 +197,33 @@ public class UnitDamageSpecBuilder {
         for (Map.Entry<Integer, JCheckBox> turretLocked : controls.buildingTurretLocked.entrySet()) {
             spec.buildingTurretLocked.put(turretLocked.getKey(), turretLocked.getValue().isSelected());
         }
-        for (Map.Entry<Integer, JCheckBox> weaponJammed : controls.buildingWeaponJammed.entrySet()) {
-            spec.buildingWeaponJammed.put(weaponJammed.getKey(), weaponJammed.getValue().isSelected());
+
+        // the weapon and location states a gamemaster sets outright
+        for (Map.Entry<Integer, JCheckBox> weaponJammed : controls.weaponJammed.entrySet()) {
+            spec.weaponJammed.put(weaponJammed.getKey(), weaponJammed.getValue().isSelected());
         }
+        for (Map.Entry<Integer, JCheckBox> weaponFired : controls.weaponFired.entrySet()) {
+            spec.weaponFired.put(weaponFired.getKey(), weaponFired.getValue().isSelected());
+        }
+        for (Map.Entry<Integer, JCheckBox> mountLocked : controls.directionalMountLocked.entrySet()) {
+            spec.directionalMountLocked.put(mountLocked.getKey(), mountLocked.getValue().isSelected());
+        }
+        spec.locationBreached = checkboxValues(controls.chkLocationBreached);
+        spec.locationBlownOff = checkboxValues(controls.chkLocationBlownOff);
 
         return spec;
+    }
+
+    /** The states of a row of checkboxes; {@code null} for a missing row, with null elements for missing boxes. */
+    private @Nullable Boolean[] checkboxValues(@Nullable JCheckBox[] checkboxes) {
+        if (null == checkboxes) {
+            return null;
+        }
+        Boolean[] values = new Boolean[checkboxes.length];
+        for (int i = 0; i < checkboxes.length; i++) {
+            values[i] = checkboxValue(checkboxes[i]);
+        }
+        return values;
     }
 
     /** The values of a row of spinners; {@code null} for a missing row, with null elements for missing spinners. */

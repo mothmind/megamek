@@ -47,8 +47,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Vector;
-import javax.swing.*;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextPane;
+import javax.swing.ScrollPaneConstants;
 
+import jakarta.annotation.Nullable;
 import megamek.client.AbstractClient;
 import megamek.client.Client;
 import megamek.client.bot.princess.BehaviorSettings;
@@ -63,7 +68,6 @@ import megamek.common.ToHitData;
 import megamek.common.actions.EntityAction;
 import megamek.common.actions.GhostTargetAction;
 import megamek.common.actions.WeaponAttackAction;
-import megamek.common.annotations.Nullable;
 import megamek.common.board.Board;
 import megamek.common.board.BoardLocation;
 import megamek.common.board.Coords;
@@ -92,26 +96,23 @@ import megamek.common.game.InitiativeRoll;
 import megamek.common.moves.MovePath;
 import megamek.common.net.packets.InvalidPacketDataException;
 import megamek.common.net.packets.Packet;
-import megamek.common.options.OptionsConstants;
 import megamek.common.pathfinder.BoardClusterTracker;
 import megamek.common.preference.PreferenceManager;
 import megamek.common.rolls.TargetRoll;
 import megamek.common.turns.SpecificEntityTurn;
-import megamek.common.units.Entity;
-import megamek.common.units.EntityListFile;
-import megamek.common.units.EntityMovementMode;
-import megamek.common.units.IBuilding;
-import megamek.common.units.Infantry;
-import megamek.common.units.Mek;
-import megamek.common.units.ProtoMek;
-import megamek.common.units.Terrains;
-import megamek.common.units.VTOL;
+import megamek.common.units.*;
 import megamek.common.util.BoardUtilities;
 import megamek.common.util.StringUtil;
 import megamek.logging.MMLogger;
 
 public abstract class BotClient extends Client {
     private final static MMLogger LOGGER = MMLogger.create(BotClient.class);
+    /**
+     * Traces each step a bot takes before it clicks Done on the end-of-round and initiative reports. Named outside
+     * {@code megamek.client.bot} so the lines reach megamek.log under both the MegaMek and the MekHQ logging setup;
+     * MekHQ only lets errors through from the bot package.
+     */
+    private static final MMLogger DONE_LEDGER_LOGGER = MMLogger.create("megamek.feature.BotDoneLedger");
 
     public static final int BOT_TURN_RETRY_COUNT = 3;
 
@@ -488,16 +489,10 @@ public abstract class BotClient extends Client {
     protected abstract PhysicalOption calculatePhysicalTurn();
 
     /**
-     * Calculate what to do during the PRE_END_DECLARATIONS phase. This phase allows infantry to initiate
-     * building/vessel combat.
+     * Calculate what to do during the PRE_END_DECLARATIONS phase: the bot's infantry vs. infantry declarations, one
+     * per building it has a stake in.
      */
     protected abstract void calculatePreEndDeclarationsTurn();
-
-    /**
-     * Calculate what to do during the INFANTRY_VS_INFANTRY_COMBAT phase. This phase allows infantry to reinforce or
-     * withdraw from building/vessel combat.
-     */
-    protected abstract void calculateInfantryVsInfantryCombatTurn();
 
     protected Vector<EntityAction> calculatePointBlankShot(int firingEntityID, int targetID) {
         return new Vector<>();
@@ -517,6 +512,15 @@ public abstract class BotClient extends Client {
      * @throws NullPointerException if entity is NULL.
      */
     protected abstract MovePath continueMovementFor(Entity entity);
+
+    /**
+     * Called once a move has been chosen for this turn, whichever way it was chosen (the bot's own pick of which unit
+     * to move, a turn that names the unit, forced individual movement, or a bot's own take-off or landing path), and
+     * before it is sent. Does nothing here; a bot that remembers its moves overrides it.
+     *
+     * @param path the chosen move, or {@code null} when none was found
+     */
+    protected void onMovePathChosen(@Nullable MovePath path) {}
 
     protected abstract Vector<BoardLocation> calculateArtyAutoHitHexes();
 
@@ -728,17 +732,30 @@ public abstract class BotClient extends Client {
                     // the other three concealment systems, Nova CEWS and the radical heat sink. The end
                     // phase is the right moment because the turn's heat has been resolved by then, so
                     // each unit is being judged on the heat it actually finished the turn carrying.
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} heat equipment - start", getName(), phase);
                     heatEquipmentManager.manageOwnedUnits();
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} heat equipment - finished", getName(), phase);
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} end of turn processing - start", getName(), phase);
                     endOfTurnProcessing();
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} end of turn processing - finished", getName(),
+                          phase);
                     // intentional fallthrough: all reports must click "done", otherwise the game
                     // never moves on.
                 case INITIATIVE_REPORT:
-                    // Let bots use Tactical Genius
-                    if (decideToRerollInitiative()) {
+                    // Let bots use Tactical Genius. END_REPORT falls through to here, but the server only accepts a
+                    // reroll in the Initiative Report phase, so only decide then.
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} initiative reroll decision - start", getName(),
+                          phase);
+                    boolean rerollInitiative = phase.isInitiativeReport() && decideToRerollInitiative();
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: {} initiative reroll decision - finished, reroll={}",
+                          getName(), phase, rerollInitiative);
+                    if (rerollInitiative) {
                         rerolledInitiative = true;
                         sendRerollInitiativeRequest();
                     }
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: sending done for {}", getName(), phase);
                     sendDone(true);
+                    DONE_LEDGER_LOGGER.info("[DoneLedger] {}: done sent for {}", getName(), phase);
                     break;
                 case TARGETING_REPORT:
                 case MOVEMENT_REPORT:
@@ -765,6 +782,8 @@ public abstract class BotClient extends Client {
             }
         } catch (Throwable t) {
             LOGGER.error(t, "changePhase");
+            DONE_LEDGER_LOGGER.error("[DoneLedger] {}: changePhase for {} threw: {}", getName(),
+                  phase, t.toString());
         }
     }
 
@@ -895,6 +914,7 @@ public abstract class BotClient extends Client {
                         mp = calculateMoveTurn();
                     }
                 }
+                onMovePathChosen(mp);
                 // MP can be null due to various factors in pathing.  Avoid derailing the bot if so.
                 int fallbackMoverId = lastAttempt ? emptyMoveFallbackId(game, moverId, getMyTurn()) : Entity.NONE;
                 if (mp != null) {
@@ -945,8 +965,6 @@ public abstract class BotClient extends Client {
                 calculatePrePhaseTurn();
             } else if (game.getPhase().isPreEndDeclarations()) {
                 calculatePreEndDeclarationsTurn();
-            } else if (game.getPhase().isInfantryVsInfantryCombat()) {
-                calculateInfantryVsInfantryCombatTurn();
             }
 
             return true;
@@ -1016,6 +1034,21 @@ public abstract class BotClient extends Client {
         return null;
     }
 
+    /**
+     * A tractor's whole train has to land in its deployment zone, so a hex only counts when at least one facing lets
+     * every trailer fit. A unit that tows nothing always fits.
+     *
+     * @param entity  the unit being deployed
+     * @param coords  the candidate hex for it
+     * @param boardId the board being deployed to
+     *
+     * @return {@code true} if the unit and any train it tows fit with it in this hex
+     */
+    private boolean trainFitsAt(Entity entity, Coords coords, int boardId) {
+        return entity.getAllTowedUnits().isEmpty()
+              || TrainLayout.hasLegalDeploymentFacing(game, entity, coords, boardId);
+    }
+
     protected List<Coords> getStartingCoordsArray(Entity deployed_ent) {
         int highest_elev, lowest_elev, weapon_count;
         double av_range, ideal_elev;
@@ -1037,11 +1070,17 @@ public abstract class BotClient extends Client {
                             ((deployed_ent.isAirborne() || deployed_ent.getMovementMode().isHoverVTOLOrWiGE()) ?
                                   deployed_ent.getElevation() :
                                   0)) &&
-                      !deployed_ent.isLocationDeadly(c)) {
+                      !deployed_ent.isLocationDeadly(c) &&
+                      trainFitsAt(deployed_ent, c, board.getBoardId())) {
                     validCoords.add(new RankedCoords(c, 0));
                 }
             }
         }
+
+        LOGGER.info("{}: {} valid deployment hexes for {}.",
+                    getName(),
+                    validCoords.size(),
+              deployed_ent.getDisplayName());
 
         // Randomize hexes to prevent clumping at the upper-left corner on
         // very flat maps
@@ -1293,7 +1332,8 @@ public abstract class BotClient extends Client {
         // edge,
         // even when considering terrain destruction
         // attempt to deploy in the biggest area this unit can access instead
-        if (highestFitness < -10) {
+        // (a unit that cannot move accesses no area, so the size of one says nothing about the hex)
+        if ((highestFitness < -10) && !cannotMove(deployed_ent)) {
             for (RankedCoords rc : validCoords) {
                 rc.fitness += getClusterTracker().getBoardClusterSize(deployed_ent, rc.coords, false);
             }
@@ -1311,6 +1351,18 @@ public abstract class BotClient extends Client {
     }
 
     /**
+     * Whether a unit can neither walk nor jump, such as a building or an emplacement. Deployment scores built on where a
+     * unit can go from a hex, such as edge access or open paths around it, mean nothing for such a unit.
+     *
+     * @param entity the unit being deployed
+     *
+     * @return {@code true} if the unit has no walking or jumping movement
+     */
+    protected static boolean cannotMove(Entity entity) {
+        return (entity.getWalkMP() == 0) && (entity.getAnyTypeMaxJumpMP() == 0);
+    }
+
+    /**
      * Determines if the given entity has reasonable access to the "opposite" edge of the board from its current
      * position. Returns 0 if this can be accomplished without destroying any terrain, -50 if this can be accomplished
      * but terrain must be destroyed, -100 if this cannot be accomplished at all
@@ -1318,6 +1370,10 @@ public abstract class BotClient extends Client {
     private int calculateEdgeAccessFitness(Entity entity, Board board) {
         // Flying units can always get anywhere
         if (entity.isAirborne() || entity instanceof VTOL) {
+            return 0;
+        }
+        // A unit that cannot move is never going anywhere, from any hex
+        if (cannotMove(entity)) {
             return 0;
         }
 
@@ -1342,8 +1398,8 @@ public abstract class BotClient extends Client {
             return 0;
         }
         int potentialDmg = (int) Math.ceil((double) building.getCurrentCF(coords) / 10);
-        boolean aptGunnery = entity.hasAbility(OptionsConstants.PILOT_APTITUDE_GUNNERY);
-        double oddsTakeDmg = 1 - (Compute.oddsAbove(entity.getCrew().getPiloting(), aptGunnery) / 100);
+        boolean hasNaturalAptitudePiloting = entity.isUseNaturalAptitudePiloting();
+        double oddsTakeDmg = 1 - (Compute.oddsAbove(entity.getCrew().getPiloting(), hasNaturalAptitudePiloting) / 100);
         return potentialDmg * oddsTakeDmg;
     }
 
@@ -1372,7 +1428,6 @@ public abstract class BotClient extends Client {
             return 0.0f;
         }
 
-        boolean naturalAptGunnery = attacker.hasAbility(OptionsConstants.PILOT_APTITUDE_GUNNERY);
         Mounted<?> weapon = attacker.getEquipment(weaponAttackAction.getWeaponId());
         ToHitData hitData = weaponAttackAction.toHit(game, allECMInfo);
         if (hitData.getValue() > 12) {
@@ -1383,7 +1438,8 @@ public abstract class BotClient extends Client {
         if (hitData.getValue() == TargetRoll.AUTOMATIC_SUCCESS) {
             fChance = 1.0f;
         } else {
-            fChance = (float) Compute.oddsAbove(hitData.getValue(), naturalAptGunnery) / 100.0f;
+            boolean isUseNaturalAptitude = attacker.isUseNaturalAptitudeGunnery(game, weaponAttackAction);
+            fChance = (float) Compute.oddsAbove(hitData.getValue(), isUseNaturalAptitude) / 100.0f;
         }
 
         // TODO : update for BattleArmor.

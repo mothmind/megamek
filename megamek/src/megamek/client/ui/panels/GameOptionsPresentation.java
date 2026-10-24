@@ -226,7 +226,9 @@ final class GameOptionsPresentation {
               OptionsConstants.VICTORY_GAME_KILL_COUNT,
               OptionsConstants.VICTORY_USE_OBJECTIVES,
               OptionsConstants.VICTORY_VP_WIN_THRESHOLD,
-              OptionsConstants.VICTORY_VP_SUDDEN_DEATH);
+              OptionsConstants.VICTORY_VP_SUDDEN_DEATH,
+              OptionsConstants.VICTORY_USE_SENSOR_CHECK,
+              OptionsConstants.VICTORY_SCAN_EXIT_TURN);
 
         register(ALLOWED_UNITS, GENERAL_UNITS_AND_TECHNOLOGY, "allowedUnits.availability",
               OptionsConstants.ALLOWED_CANON_ONLY,
@@ -255,6 +257,7 @@ final class GameOptionsPresentation {
         register(ADVANCED_RULES, RULES_SENSORS, "rules.sensors.detection",
               OptionsConstants.ADVANCED_TAC_OPS_SENSORS,
               OptionsConstants.ADVANCED_TAC_OPS_BAP,
+              OptionsConstants.ADVANCED_TAC_OPS_SCANNING,
               OptionsConstants.ADVANCED_INCLUSIVE_SENSOR_RANGE,
               OptionsConstants.ADVANCED_SENSORS_DETECT_ALL,
               OptionsConstants.ADVANCED_MAG_SCAN_NO_HILLS,
@@ -375,6 +378,7 @@ final class GameOptionsPresentation {
               OptionsConstants.ADVANCED_COMBAT_TAC_OPS_START_FIRE,
               OptionsConstants.ADVANCED_COMBAT_FOREST_FIRES_NO_SMOKE,
               OptionsConstants.ADVANCED_COMBAT_TAC_OPS_HEAT,
+              OptionsConstants.ADVANCED_COMBAT_TAC_OPS_AVOIDING_SHUTDOWN,
               OptionsConstants.ADVANCED_COMBAT_TAC_OPS_COOLANT_FAILURE,
               OptionsConstants.ADVANCED_COMBAT_MAX_EXTERNAL_HEAT);
 
@@ -403,6 +407,7 @@ final class GameOptionsPresentation {
               OptionsConstants.ADVANCED_COMBAT_TAC_OPS_BA_VS_BA,
               OptionsConstants.ADVANCED_COMBAT_PROTOMEKS_SAFE_FROM_INFERNOS);
         register(ADVANCED_COMBAT, COMBAT_UNITS, "combat.units.infantryActions",
+              OptionsConstants.ADVANCED_COMBAT_INFANTRY_ACTION_COMMITTED_UNITS_HOLD,
               OptionsConstants.ADVANCED_COMBAT_INFANTRY_ACTION_DEFENDER_WITHDRAWAL);
     }
 

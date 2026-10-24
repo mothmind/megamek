@@ -84,6 +84,7 @@ import megamek.common.rolls.Roll;
 import megamek.common.rolls.TargetRoll;
 import megamek.common.units.*;
 import megamek.common.weapons.DamageType;
+import megamek.common.weapons.infantry.InfantryWeapon;
 import megamek.logging.MMLogger;
 import megamek.server.Server;
 import megamek.server.SmokeCloud;
@@ -224,7 +225,7 @@ public class WeaponHandler implements AttackHandler, Serializable {
             WeaponAttackAction prevAttack = attackHandler.getWeaponAttackAction();
             if (prevAttack.getEntityId() == entity.getId()) {
                 WeaponMounted prevWeapon = (WeaponMounted) entity.getEquipment(prevAttack.getWeaponId());
-                if (!game.getOptions().booleanOption(OptionsConstants.ADVANCED_AERO_RULES_HEAT_BY_BAY)) {
+                if (game.getOptions().booleanOption(OptionsConstants.ADVANCED_AERO_RULES_HEAT_BY_BAY)) {
                     totalHeat += prevWeapon.getHeatByBay();
                 } else {
                     boolean rearMount = prevWeapon.isRearMounted();
@@ -1127,7 +1128,8 @@ public class WeaponHandler implements AttackHandler, Serializable {
             int hits = calcHits(vPhaseReport);
             if ((target.isAirborne() && !weaponAttackAction.isGroundToAir(game))
                   || game.isOnSpaceMap(target)
-                  || attackingEntity.usesWeaponBays()) {
+                  || attackingEntity.usesWeaponBays()
+                  || isAirToGroundClusterAttack(entityTarget)) {
                 // if we added a line to the phase report for calc hits, remove
                 // it now
                 while (vPhaseReport.size() > id) {
@@ -1140,6 +1142,12 @@ public class WeaponHandler implements AttackHandler, Serializable {
                     hits = 0;
                 }
                 nCluster = aeroResults[1];
+                if (!bMissed && appliesAttackValueInGroups(nCluster)) {
+                    report = new Report(3391);
+                    report.subject = subjectId;
+                    report.add(hits);
+                    vPhaseReport.addElement(report);
+                }
             }
 
             // We have to adjust the reports on a miss, so they line up
@@ -1218,9 +1226,10 @@ public class WeaponHandler implements AttackHandler, Serializable {
                         hits = 0;
                         // Targeting a building.
                     } else if (target.getTargetType() == Targetable.TYPE_BUILDING) {
-                        // The building takes the full brunt of the attack, one damage grouping at a time.
-                        hits = handleBuildingDamageByGrouping(vPhaseReport, bldg, hits, nCluster,
-                              target.getPosition());
+                        // The building takes the full brunt of the attack, all its hits as one attack (TW p. 171)
+                        nDamage = nDamPerHit * hits;
+                        handleBuildingDamage(vPhaseReport, bldg, nDamage, target.getPosition());
+                        hits = 0;
                     } else if (entityTarget != null) {
                         handleEntityDamage(entityTarget, vPhaseReport, bldg, hits, nCluster, bldgAbsorbs);
                         gameManager.creditKill(entityTarget, attackingEntity);
@@ -1242,11 +1251,13 @@ public class WeaponHandler implements AttackHandler, Serializable {
                     report.subject = attackingEntity.getId();
                     report.newlines--;
                     vPhaseReport.add(report);
-                    // The missed volley hits the building one damage grouping at a time; bSalvo is forced on so the
-                    // building damage does not report a hit
+                    int nDamage = nDamPerHit * hits;
+                    // We want to set bSalvo to true to prevent
+                    // handleBuildingDamage from reporting a hit
                     boolean savedSalvo = bSalvo;
                     bSalvo = true;
-                    handleBuildingDamageByGrouping(vPhaseReport, bldg, hits, nCluster, target.getPosition());
+                    handleBuildingDamage(vPhaseReport, bldg, nDamage,
+                          target.getPosition());
                     bSalvo = savedSalvo;
                 }
             }
@@ -1268,7 +1279,7 @@ public class WeaponHandler implements AttackHandler, Serializable {
                     report.subject = attackingEntity.getId();
                     vPhaseReport.addElement(report);
                     if (attackingEntity.getCrew() != null){
-                        roll = attackingEntity.getCrew().rollGunnerySkill();
+                        roll = attackingEntity.getCrew().rollGunnerySkill(game, weaponAttackAction);
                     } else {
                         roll = Compute.rollD6(2);
                     }
@@ -1638,14 +1649,8 @@ public class WeaponHandler implements AttackHandler, Serializable {
                 report.subject = subjectId;
                 report.indent();
             }
+            // The infantry inside are not hurt: only an intentional attack on a building reaches them (TW p. 172)
             vPhaseReport.addAll(buildingReport);
-            // Damage any infantry in the building.
-            Vector<Report> infantryReport = gameManager.damageInfantryIn(coverBuilding, nDamage,
-                  coverLoc, weaponType.getInfantryDamageClass());
-            for (Report report : infantryReport) {
-                report.indent(2);
-            }
-            vPhaseReport.addAll(infantryReport);
         }
         missed = true;
     }
@@ -1895,32 +1900,6 @@ public class WeaponHandler implements AttackHandler, Serializable {
         vPhaseReport.addAll(clearReports);
     }
 
-    /**
-     * Applies an attack on a building hex one Damage Value grouping at a time. TW p. 171 treats each grouping of a
-     * cluster weapon as a separate attack against the building, so the building's absorption and the share passed
-     * through to infantry inside (p. 172) are rounded per grouping rather than once on the whole volley. A weapon
-     * that does not fire a salvo is a single grouping.
-     *
-     * @param vPhaseReport the phase report to add to
-     * @param bldg         the building that was hit
-     * @param hits         the number of hits to resolve
-     * @param nCluster     the number of hits in one damage grouping
-     * @param coords       the building hex that was hit
-     *
-     * @return the hits left to resolve, always {@code 0}
-     */
-    protected int handleBuildingDamageByGrouping(Vector<Report> vPhaseReport, IBuilding bldg, int hits,
-          int nCluster, Coords coords) {
-        int groupingSize = bSalvo ? Math.max(1, nCluster) : hits;
-        int remainingHits = hits;
-        while (remainingHits > 0) {
-            int groupingHits = Math.min(groupingSize, remainingHits);
-            handleBuildingDamage(vPhaseReport, bldg, nDamPerHit * groupingHits, coords);
-            remainingHits -= groupingHits;
-        }
-        return 0;
-    }
-
     protected void handleBuildingDamage(Vector<Report> vPhaseReport, IBuilding bldg, int nDamage,
           Coords coords) {
         if (!bSalvo) {
@@ -1938,9 +1917,17 @@ public class WeaponHandler implements AttackHandler, Serializable {
 
         // Damage any infantry in hex, unless attack between units in same bldg
         if (toHit.getThruBldg() == null) {
-            vPhaseReport.addAll(gameManager.damageInfantryIn(bldg, nDamage, coords,
-                  weaponType.getInfantryDamageClass()));
+            vPhaseReport.addAll(gameManager.damageInfantryIn(bldg, nDamage, coords, infantryDamageClass()));
         }
+    }
+
+    /**
+     * The row of the damage table for infantry (TW p. 216) that this attack's damage is converted by when it reaches
+     * infantry inside a building. Damage from conventional infantry weapons is never reduced.
+     */
+    protected int infantryDamageClass() {
+        return (weaponType instanceof InfantryWeapon) ? WeaponType.WEAPON_INFANTRY_ORIGIN
+              : weaponType.getInfantryDamageClass();
     }
 
     protected boolean allShotsHit() {
@@ -2013,7 +2000,7 @@ public class WeaponHandler implements AttackHandler, Serializable {
         // is this an underwater attack on a surface naval vessel?
         underWater = toHit.getHitTable() == ToHitData.HIT_UNDERWATER;
         if (attackingEntity.getCrew() != null){
-            roll = attackingEntity.getCrew().rollGunnerySkill();
+            roll = attackingEntity.getCrew().rollGunnerySkill(game, weaponAttackAction);
         } else {
             roll = Compute.rollD6(2);
         }
@@ -2111,6 +2098,37 @@ public class WeaponHandler implements AttackHandler, Serializable {
      */
     protected boolean usesClusterTable() {
         return false;
+    }
+
+    /**
+     * An airborne aerospace unit's cluster weapon fired at a ground unit applies its Attack Value in groups, in place
+     * of a roll on the Cluster Hits Table (TW pp. 244-245). Conventional infantry are left out, since attacks on them
+     * use the Non-Infantry Weapon Damage Against Infantry Table instead (TW p. 215).
+     *
+     * @param entityTarget the targeted unit, or {@code null} if the target is not a unit
+     *
+     * @return {@code true} if this attack's damage should be resolved by {@link #calcAeroDamage}
+     */
+    private boolean isAirToGroundClusterAttack(Entity entityTarget) {
+        return (entityTarget != null)
+              && !entityTarget.isConventionalInfantry()
+              && usesClusterTable()
+              && weaponAttackAction.isAirToGround(game);
+    }
+
+    /**
+     * Whether {@link #calcAeroDamage} applied the Attack Value in groups instead of rolling for hits. This happens for
+     * cluster weapons fired by aerospace units that are not capital fighters, with Aero Sanity off. No hit count is
+     * rolled in that case, so the hit report shows the Attack Value.
+     *
+     * @param nCluster the cluster size returned by {@link #calcAeroDamage}
+     *
+     * @return {@code true} if the damage was the Attack Value applied in groups
+     */
+    protected boolean appliesAttackValueInGroups(int nCluster) {
+        return !game.getOptions().booleanOption(OptionsConstants.ADVANCED_AERO_RULES_AERO_SANITY)
+              && !attackingEntity.isCapitalFighter()
+              && (nCluster > 1);
     }
 
     /**
@@ -2274,7 +2292,9 @@ public class WeaponHandler implements AttackHandler, Serializable {
     }
 
     /**
-     * Restores the equipment from the name
+     * Restores the equipment from the name, and reattaches the game to this handler's own copies of the attacking and
+     * weapon entities. A saved handler (such as an artillery shell still in flight) stores those copies separately
+     * from the game's units, so after a load they have no game and no owner until this runs.
      */
     public void restore() {
         if (typeName == null) {
@@ -2286,6 +2306,13 @@ public class WeaponHandler implements AttackHandler, Serializable {
             LOGGER.error("Could not restore equipment type \"{}\"", typeName);
         } else {
             typeName = weaponType.getInternalName();
+        }
+
+        if ((attackingEntity != null) && (attackingEntity.getGame() != game)) {
+            attackingEntity.setGame(game);
+        }
+        if ((weaponEntity != null) && (weaponEntity.getGame() != game)) {
+            weaponEntity.setGame(game);
         }
     }
 

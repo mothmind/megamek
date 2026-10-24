@@ -43,6 +43,7 @@ import java.util.Enumeration;
 import java.util.Vector;
 import javax.xml.namespace.QName;
 
+import jakarta.annotation.Nullable;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.Marshaller;
@@ -52,7 +53,6 @@ import jakarta.xml.bind.annotation.XmlAccessorType;
 import jakarta.xml.bind.annotation.XmlElement;
 import jakarta.xml.bind.annotation.XmlRootElement;
 import megamek.common.TechConstants;
-import megamek.common.annotations.Nullable;
 import megamek.common.enums.NeuralInterfaceMode;
 import megamek.logging.MMLogger;
 import megamek.utilities.xml.MMXMLUtility;
@@ -114,6 +114,8 @@ public class GameOptions extends BasicGameOptions {
         addOption(victory, OptionsConstants.VICTORY_USE_OBJECTIVES, false);
         addOption(victory, OptionsConstants.VICTORY_VP_WIN_THRESHOLD, 0);
         addOption(victory, OptionsConstants.VICTORY_VP_SUDDEN_DEATH, false);
+        addOption(victory, OptionsConstants.VICTORY_USE_SENSOR_CHECK, false);
+        addOption(victory, OptionsConstants.VICTORY_SCAN_EXIT_TURN, 5);
 
         IBasicOptionGroup allowed = addGroup("allowedUnits");
         addOption(allowed, OptionsConstants.ALLOWED_CANON_ONLY, false);
@@ -139,6 +141,7 @@ public class GameOptions extends BasicGameOptions {
         addOption(advancedRules, OptionsConstants.ADVANCED_SUPPRESS_DB_BV, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_TEAM_VISION, true);
         addOption(advancedRules, OptionsConstants.ADVANCED_TAC_OPS_BAP, false);
+        addOption(advancedRules, OptionsConstants.ADVANCED_TAC_OPS_SCANNING, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_TAC_OPS_ECCM, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_TAC_OPS_C3_EMERGENCY_MASTER, false);
         addOption(advancedRules, OptionsConstants.ADVANCED_TAC_OPS_GHOST_TARGET, false);
@@ -192,6 +195,7 @@ public class GameOptions extends BasicGameOptions {
         IBasicOptionGroup advancedCombat = addGroup("advancedCombat");
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_AMS, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_INFANTRY_ACTION_DEFENDER_WITHDRAWAL, false);
+        addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_INFANTRY_ACTION_COMMITTED_UNITS_HOLD, true);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_MANUAL_AMS, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_FLOATING_CRITS, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_CRIT_ROLL, false);
@@ -213,6 +217,7 @@ public class GameOptions extends BasicGameOptions {
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_DIRECT_BLOW, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_BURST, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_HEAT, false);
+        addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_AVOIDING_SHUTDOWN, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_PARTIAL_COVER, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_BA_CRITICAL_SLOTS, false);
         addOption(advancedCombat, OptionsConstants.ADVANCED_COMBAT_TAC_OPS_HOT_LOAD, false);

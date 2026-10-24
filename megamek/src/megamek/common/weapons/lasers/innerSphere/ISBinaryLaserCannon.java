@@ -36,9 +36,9 @@ package megamek.common.weapons.lasers.innerSphere;
 
 import java.io.Serial;
 
-import megamek.common.SourceBookCode;
+import jakarta.annotation.Nullable;
 import megamek.common.SimpleTechLevel;
-import megamek.common.annotations.Nullable;
+import megamek.common.SourceBookCode;
 import megamek.common.equipment.Mounted;
 import megamek.common.weapons.DeadReckoningWeapons;
 import megamek.common.enums.AvailabilityValue;
