@@ -784,9 +784,11 @@ class PrincessTest {
         BipedMek crippledMek = mock(BipedMek.class);
         when(crippledMek.getId()).thenReturn(21);
         when(crippledMek.isCrippled(true)).thenReturn(true);
+        when(crippledMek.getForcedWithdrawalOrder()).thenReturn(ForcedWithdrawalOrder.BOT_RULES);
         BipedMek healthyMek = mock(BipedMek.class);
         when(healthyMek.getId()).thenReturn(22);
         when(healthyMek.isCrippled(true)).thenReturn(false);
+        when(healthyMek.getForcedWithdrawalOrder()).thenReturn(ForcedWithdrawalOrder.BOT_RULES);
         doReturn(List.of(crippledMek, healthyMek)).when(princess).getEntitiesOwned();
 
         princess.refreshCrippledUnits();
@@ -804,6 +806,7 @@ class PrincessTest {
         BipedMek crippledMek = mock(BipedMek.class);
         when(crippledMek.getId()).thenReturn(21);
         when(crippledMek.isCrippled(true)).thenReturn(true);
+        when(crippledMek.getForcedWithdrawalOrder()).thenReturn(ForcedWithdrawalOrder.BOT_RULES);
         doReturn(List.of(crippledMek)).when(princess).getEntitiesOwned();
 
         princess.refreshCrippledUnits();
