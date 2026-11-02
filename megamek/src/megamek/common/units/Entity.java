@@ -14070,6 +14070,12 @@ public abstract class Entity extends TurnOrdered
         setDestroyed(false);
         // Without this a unit wrecked, recovered and repaired is written off again the next time it only flees
         clearBattleOutcome();
+        // SkyEye: the pose and kill credit records go with the killer id above, so they do not carry into the next battle
+        posing = false;
+        killedByPosingUnit = false;
+        damageTakenFrom = null;
+        lastHitOrderFrom = null;
+        attributedHitsTaken = 0;
 
         // Transport, swarming and targeting links to other units by their game ids
         resetBays();
