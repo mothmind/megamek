@@ -536,8 +536,9 @@ class MovePathHandler extends AbstractTWRuleHandler {
                 boolean fellWhileDescending = false;
                 for (int i = 1; i <= levelsToDescend; i++) {
                     PilotingRollData psr = entity.getBasePilotingRoll(EntityMovementType.MOVE_WALK);
+                    // The +1 climbing modifier is not applied to the climbing roll itself (TO:AR p.20)
                     psr.append(new PilotingRollData(entity.getId(),
-                                                    ClimbingHelper.CLIMBING_PSR_MODIFIER,
+                                                    0,
                                                     "climbing down (level " + i + " of " + levelsToDescend + ")"));
                     if (climbableArms == 1) {
                         psr.append(new PilotingRollData(entity.getId(),
@@ -685,8 +686,9 @@ class MovePathHandler extends AbstractTWRuleHandler {
                 boolean fellWhileDescending = false;
                 for (int i = 1; i <= levelsToDescend; i++) {
                     PilotingRollData psr = entity.getBasePilotingRoll(EntityMovementType.MOVE_WALK);
+                    // The +1 climbing modifier is not applied to the climbing roll itself (TO:AR p.20)
                     psr.append(new PilotingRollData(entity.getId(),
-                                                    ClimbingHelper.CLIMBING_PSR_MODIFIER,
+                                                    0,
                                                     "climbing down (level " + i + " of " + levelsToDescend + ")"));
                     if (climbableArms == 1) {
                         psr.append(new PilotingRollData(entity.getId(),
@@ -4439,25 +4441,38 @@ class MovePathHandler extends AbstractTWRuleHandler {
                     return;
                 }
 
+                cargo = CarriedUnitRelinker.currentInstanceOf(getGame(), cargo);
                 entity.dropCarriedObject(cargo, isLastStep);
+                boolean cargoUnloaded = true;
                 if (cargo instanceof Entity carriedEntity) {
-                    gameManager.unloadUnit(entity,
-                                           carriedEntity,
-                                           step.getPosition(),
-                                           step.getFacing(),
-                                           step.getElevation());
+                    cargoUnloaded = gameManager.unloadUnit(entity,
+                          carriedEntity,
+                          step.getPosition(),
+                          step.getFacing(),
+                          step.getElevation());
+                    if (cargoUnloaded) {
+                        logger.info("{} dropped {} at {}",
+                              entity.getShortName(),
+                              carriedEntity.getShortName(),
+                              step.getPosition().toFriendlyString());
+                    } else {
+                        logger.error("{} could not drop {} at {}: none of its transporters holds that unit",
+                              entity.getShortName(),
+                              carriedEntity.getShortName(),
+                              step.getPosition().toFriendlyString());
+                    }
                 }
 
 
                 boolean cargoDestroyed = false;
 
-                if (!isLastStep) {
+                if (cargoUnloaded && !isLastStep) {
                     cargoDestroyed = gameManager.damageCargo(step.isFlying() || step.isJumping(), entity, cargo);
                 }
 
                 // note that this should not be moved into the "!isLastStep" block above as cargo may be either
                 // unloaded peacefully or dumped on the move
-                if (!cargoDestroyed) {
+                if (cargoUnloaded && !cargoDestroyed) {
                     if (cargo instanceof GroundObject) {
                         getGame().placeGroundObject(step.getPosition(), cargo);
                     }
@@ -4894,8 +4909,9 @@ class MovePathHandler extends AbstractTWRuleHandler {
                 for (int levelClimbed = 1; levelClimbed <= levelsThisTurn; levelClimbed++) {
                     int overallLevel = levelsAlreadyClimbed + levelClimbed;
                     rollTarget = entity.getBasePilotingRoll(moveType);
+                    // The +1 climbing modifier is not applied to the climbing roll itself (TO:AR p.20)
                     rollTarget.append(new PilotingRollData(entity.getId(),
-                                                           ClimbingHelper.CLIMBING_PSR_MODIFIER,
+                                                           0,
                                                            "climbing (level " + overallLevel + " of " + overallClimbHeight + ")"));
                     if (climbableArms == 1) {
                         rollTarget.append(new PilotingRollData(entity.getId(),
